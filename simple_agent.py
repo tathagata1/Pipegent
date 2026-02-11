@@ -2,7 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-from typing import Callable, Dict
+from typing import Callable, Dict, List
 
 from openai import OpenAI
 from config import chatgpt_key
@@ -84,23 +84,24 @@ RULES:
 3. A tool call is mandatory for every response. If nothing else fits, call speech with the words you want to say.
 """
 
-def run_agent(user_input: str):
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_input}
-    ]
+CONVERSATION_HISTORY: List[Dict[str, str]] = [
+    {"role": "system", "content": SYSTEM_PROMPT}
+]
 
-    # Step 1: Ask the LLM what to do
+def run_agent(user_input: str):
+    CONVERSATION_HISTORY.append({"role": "user", "content": user_input})
+
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=messages,
+        messages=CONVERSATION_HISTORY,
         temperature=0
     )
 
     content = response.choices[0].message.content.strip()
     print("LLM Response:", content)
-    
-    # Step 2: Check if it wants to use a tool
+
+    CONVERSATION_HISTORY.append({"role": "assistant", "content": content})
+
     try:
         tool_call = json.loads(content)
     except json.JSONDecodeError:
@@ -117,23 +118,28 @@ def run_agent(user_input: str):
     if tool_name not in TOOLS:
         return f"Unknown tool: {tool_name}"
 
-    # Step 3: Execute tool
     result = TOOLS[tool_name](**args)
 
-    # Step 4: Send result back to LLM
-    messages.append({"role": "assistant", "content": content})
-    messages.append(
-        {"role": "user", "content": f"Tool '{tool_name}' result: {result}"}
-    )
+    if tool_name == "speech":
+        CONVERSATION_HISTORY.append({"role": "assistant", "content": result})
+        return result
+
+    tool_result_message = {
+        "role": "user",
+        "content": f"Tool '{tool_name}' result: {result}"
+    }
+    CONVERSATION_HISTORY.append(tool_result_message)
 
     final_response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=messages,
+        messages=CONVERSATION_HISTORY,
         temperature=0
     )
 
     final_content = final_response.choices[0].message.content.strip()
     print("LLM Final Response:", final_content)
+
+    CONVERSATION_HISTORY.append({"role": "assistant", "content": final_content})
 
     try:
         final_tool = json.loads(final_content)
@@ -155,9 +161,6 @@ def run_agent(user_input: str):
         return TOOLS[final_tool_name](**final_args)
     except Exception as exc:
         return f"Final tool '{final_tool_name}' error: {exc}"
-    
-
-
 
 # -------------------
 # Run
