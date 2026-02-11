@@ -105,8 +105,10 @@ class PlannerAgent:
     PLAN_SYSTEM_PROMPT = (
         "You are Pipegent's planning LLM. Break user goals into an ordered list of "
         "concrete steps that a separate execution agent can follow. Produce strictly "
-        "valid JSON that looks like {{\"steps\": [\"step description\", ...]}} and do not exceed "
-        "{max_steps} steps."
+        "valid JSON that looks like {{\"steps\": [\"step description\", ...]}} and return "
+        "only as many steps as are truly required (between 1 and {max_steps}). "
+        "Skip filler actions like greetings, generic follow-up questions, or waiting "
+        "unless the user explicitly requests them."
     )
     SUMMARY_SYSTEM_PROMPT = (
         "You are Pipegent's planning LLM. Given the original request and the outputs "
@@ -169,7 +171,9 @@ class PlannerAgent:
 
         user_prompt = (
             f"User request:\n{user_request}\n\nAvailable tools:\n{tool_lines}\n\n"
-            f"Create at most {self.max_steps} ordered steps that the execution agent should perform."
+            f"Create between 1 and {self.max_steps} ordered steps that the execution agent should perform. "
+            "Only include essential actions that directly move the user toward their goal; "
+            "omit pleasantries or generic follow-ups unless explicitly requested."
         )
 
         messages = [
