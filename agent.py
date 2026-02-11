@@ -315,8 +315,3 @@ class PlannerAgent:
                 file_path.unlink()
             except FileNotFoundError:
                 pass
-        try:
-            if self.temp_dir.exists() and not any(self.temp_dir.iterdir()):
-                self.temp_dir.rmdir()
-        except OSError:
-            pass
