@@ -193,15 +193,33 @@ class PlannerAgent:
         content = response.choices[0].message.content.strip()
         print("Planner Plan Response:", content)
 
+        planned_steps: List[str] = []
         try:
             parsed = json.loads(content)
-            steps = parsed.get("steps", [])
-            if isinstance(steps, list):
-                return [str(step) for step in steps if str(step).strip()]
+            candidate_steps = parsed.get("steps", [])
+            if isinstance(candidate_steps, list):
+                for raw in candidate_steps:
+                    text_step = str(raw).strip()
+                    if not text_step:
+                        continue
+                    if self._is_filler_step(text_step):
+                        continue
+                    planned_steps.append(text_step)
         except json.JSONDecodeError:
             pass
 
-        return [user_request]
+        if not planned_steps:
+            planned_steps = [user_request]
+
+        return planned_steps[: self.max_steps]
+
+    @staticmethod
+    def _is_filler_step(step: str) -> bool:
+        fillers = [
+            "greet","hello","hi","thank","assist you today","offer further assistance","wait for","check in"
+        ]
+        lowered = step.lower()
+        return any(keyword in lowered for keyword in fillers)
 
     def _build_executor_instruction(
         self,
@@ -211,10 +229,20 @@ class PlannerAgent:
         prior_results: List[Dict[str, Any]],
     ) -> str:
         if prior_results:
-            previous = "\n\n".join(
-                f"Step {idx + 1}: {entry['step']}\nFile: {entry['file_path']}\nOutput preview: {entry['result'][:300]}"
-                for idx, entry in enumerate(prior_results)
-            )
+            sections = []
+            for idx, entry in enumerate(prior_results):
+                file_path = Path(entry["file_path"]) if entry.get("file_path") else None
+                try:
+                    file_contents = (
+                        file_path.read_text(encoding="utf-8") if file_path else entry["result"]
+                    )
+                except OSError:
+                    file_contents = entry["result"]
+                preview = file_contents[:300]
+                sections.append(
+                    f"Step {idx + 1}: {entry['step']}\nFile: {entry['file_path']}\nOutput preview: {preview}"
+                )
+            previous = "\n\n".join(sections)
         else:
             previous = "None yet."
 
@@ -231,16 +259,27 @@ class PlannerAgent:
         steps: List[str],
         results: List[Dict[str, Any]],
     ) -> str:
+        summarized_results = []
+        for entry in results:
+            file_path = Path(entry["file_path"]) if entry.get("file_path") else None
+            try:
+                file_contents = (
+                    file_path.read_text(encoding="utf-8") if file_path else entry["result"]
+                )
+            except OSError:
+                file_contents = entry["result"]
+
+            summarized_results.append(
+                {
+                    "step": entry["step"],
+                    "output_preview": file_contents[:1000],
+                }
+            )
+
         payload = {
             "user_request": user_request,
             "steps": steps,
-            "results": [
-                {
-                    "step": entry["step"],
-                    "output": entry["result"],
-                }
-                for entry in results
-            ],
+            "results": summarized_results,
         }
 
         messages = [
