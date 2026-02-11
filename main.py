@@ -1,4 +1,5 @@
 ﻿import os
+import shutil
 from pathlib import Path
 
 from openai import OpenAI
@@ -35,6 +36,7 @@ def create_agent() -> PlannerAgent:
     )
 
     temp_dir = Path(__file__).parent / "tempstore"
+    prepare_temp_dir(temp_dir)
 
     return PlannerAgent(
         client=client,
@@ -45,6 +47,16 @@ def create_agent() -> PlannerAgent:
         max_steps=max_steps,
         temp_dir=temp_dir,
     )
+
+
+
+def prepare_temp_dir(temp_dir: Path) -> None:
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    for item in temp_dir.iterdir():
+        if item.is_file():
+            item.unlink()
+        elif item.is_dir():
+            shutil.rmtree(item)
 
 
 def main() -> None:

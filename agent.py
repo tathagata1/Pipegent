@@ -107,16 +107,16 @@ class PlannerAgent:
         self.planner_temperature = planner_temperature
         self.max_steps = max(1, max_steps)
         self.temp_dir = temp_dir
+        self.context_history: List[Dict[str, str]] = []
 
     def handle_request(self, user_request: str) -> str:
         created_files: List[Path] = []
+        final_response = ""
+        step_results: List[Dict[str, Any]] = []
+        steps: List[str] = []
         try:
             steps = self._plan_steps(user_request)
-            if not steps:
-                steps = [user_request]
-            steps = steps[: self.max_steps]
 
-            step_results: List[Dict[str, Any]] = []
             for index, step in enumerate(steps, start=1):
                 instruction = self._build_executor_instruction(
                     user_request, step, index, step_results
@@ -132,11 +132,15 @@ class PlannerAgent:
                     }
                 )
 
-            return self._build_final_response(user_request, steps, step_results)
+            final_response = self._build_final_response(user_request, steps, step_results)
         except Exception as exc:
-            return f"Planner error: {exc}"
+            final_response = f"Planner error: {exc}"
         finally:
             self._cleanup_temp_files(created_files)
+            if final_response:
+                self._append_history(user_request, steps, step_results, final_response)
+
+        return final_response
 
     def _plan_steps(self, user_request: str) -> List[str]:
         tool_lines = "\n".join(
@@ -156,9 +160,10 @@ class PlannerAgent:
             {
                 "role": "system",
                 "content": self.PLAN_SYSTEM_PROMPT.format(max_steps=self.max_steps),
-            },
-            {"role": "user", "content": user_prompt},
+            }
         ]
+        messages.extend(self.context_history)
+        messages.append({"role": "user", "content": user_prompt})
 
         response = self.client.chat.completions.create(
             model=self.planner_model,
@@ -302,3 +307,42 @@ class PlannerAgent:
                 file_path.unlink()
             except FileNotFoundError:
                 pass
+
+    def _append_history(
+        self,
+        user_request: str,
+        steps: List[str],
+        step_results: List[Dict[str, Any]],
+        final_response: str,
+    ) -> None:
+        if not final_response:
+            return
+
+        condensed_results = []
+        for entry in step_results:
+            condensed_results.append(
+                {
+                    "step": entry.get("step", ""),
+                    "result_preview": str(entry.get("result", ""))[:500],
+                }
+            )
+
+        summary_payload = {
+            "steps": steps,
+            "results": condensed_results,
+            "final_response": final_response,
+        }
+
+        self.context_history.append(
+            {"role": "user", "content": f"Previous request:\n{user_request}"}
+        )
+        self.context_history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    "Completed prior interaction:\n"
+                    + json.dumps(summary_payload, ensure_ascii=False)
+                ),
+            }
+        )
+
