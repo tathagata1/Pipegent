@@ -1,5 +1,4 @@
 import random
-from typing import Callable
 
 
 def roll_dice(sides: int = 6, rolls: int = 1) -> str:
@@ -10,7 +9,3 @@ def roll_dice(sides: int = 6, rolls: int = 1) -> str:
 
     results = [str(random.randint(1, sides)) for _ in range(rolls)]
     return ", ".join(results)
-
-
-def register() -> tuple[str, Callable]:
-    return "roll_dice", roll_dice

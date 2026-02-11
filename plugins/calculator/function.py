@@ -1,5 +1,3 @@
-from typing import Callable
-
 
 def calculator(a: float, b: float, operation: str) -> float:
     if operation == "add":
@@ -11,7 +9,3 @@ def calculator(a: float, b: float, operation: str) -> float:
     if operation == "divide":
         return a / b
     raise ValueError("Invalid operation")
-
-
-def register() -> tuple[str, Callable]:
-    return "calculator", calculator

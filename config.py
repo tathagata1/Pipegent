@@ -1,9 +1,12 @@
 import configparser
+from pathlib import Path
+
+CONFIG_PATH = Path(__file__).with_name("config.ini")
 
 config = configparser.ConfigParser()
-config.read('config.ini')
+if not config.read(CONFIG_PATH):
+    raise FileNotFoundError(f"Missing config file: {CONFIG_PATH}")
 
-rapidapi_url=config['API']['rapidapi_url']
-rapidapi_key=config['API']['rapidapi_key']
-rapidapi_service=config['API']['rapidapi_service']
-chatgpt_key=config['API']['chatgpt_key']
+chatgpt_key = config["OPENAI"]["chatgpt_key"]
+agent_model = config["AGENT"]["model"]
+agent_temperature = config.getfloat("AGENT", "temperature", fallback=0.0)

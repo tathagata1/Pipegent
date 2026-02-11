@@ -1,5 +1,4 @@
-﻿import random
-from typing import Callable
+import random
 
 _JOKES = [
     "Why did the scarecrow get promoted? He was outstanding in his field!",
@@ -7,9 +6,6 @@ _JOKES = [
     "Parallel lines have so much in common. It's a shame they'll never meet."
 ]
 
+
 def tell_joke() -> str:
     return random.choice(_JOKES)
-
-
-def register() -> tuple[str, Callable]:
-    return "tell_joke", tell_joke
