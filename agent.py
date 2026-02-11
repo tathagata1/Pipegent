@@ -58,40 +58,7 @@ class ToolExecutor:
         if tool_name == "speech":
             return str(result)
 
-        messages.append(
-            {
-                "role": "user",
-                "content": f"Tool '{tool_name}' result: {result}",
-            }
-        )
-
-        final_response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-        )
-
-        final_content = final_response.choices[0].message.content.strip()
-        print("Executor Final Response:", final_content)
-
-        try:
-            final_tool = json.loads(final_content)
-        except json.JSONDecodeError:
-            return final_content
-
-        if not isinstance(final_tool, dict) or "tool" not in final_tool:
-            return final_content
-
-        final_tool_name = final_tool["tool"]
-        final_args = self._normalize_args(final_tool)
-
-        if final_tool_name not in self.tools:
-            return f"Unknown tool: {final_tool_name}"
-
-        try:
-            return str(self.tools[final_tool_name](**final_args))
-        except Exception as exc:
-            return f"Final tool '{final_tool_name}' error: {exc}"
+        return f"{tool_name} result: {result}"
 
     @staticmethod
     def _normalize_args(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -106,9 +73,16 @@ class PlannerAgent:
         "You are Pipegent's planning LLM. Break user goals into an ordered list of "
         "concrete steps that a separate execution agent can follow. Produce strictly "
         "valid JSON that looks like {{\"steps\": [\"step description\", ...]}} and return "
-        "only as many steps as are truly required (between 1 and {max_steps}). "
-        "Skip filler actions like greetings, generic follow-up questions, or waiting "
-        "unless the user explicitly requests them."
+        "only as many steps as are truly required (between 1 and {max_steps}). Skip filler "
+        "actions like greetings, generic follow-up questions, or waiting unless the user "
+        "explicitly requests them. Each step must correspond to exactly one tool invocation "
+        "or simple action?never describe loops or say 'repeat'; instead enumerate every "
+        "iteration explicitly (e.g., four dice rolls = four separate steps). Mention the "
+        "tool to call (e.g., roll_dice, calculator) in each step. When using roll_dice, "
+        "state rolls=1 unless the user explicitly asks for a different value. Remember that the "
+        "calculator tool accepts only two inputs; summing more than two numbers requires multiple "
+        "calculator steps (each adding two values or partial totals). Refer to prior results by step "
+        "number (e.g., 'use the value from step 1') instead of inventing variable names."
     )
     SUMMARY_SYSTEM_PROMPT = (
         "You are Pipegent's planning LLM. Given the original request and the outputs "
@@ -173,7 +147,9 @@ class PlannerAgent:
             f"User request:\n{user_request}\n\nAvailable tools:\n{tool_lines}\n\n"
             f"Create between 1 and {self.max_steps} ordered steps that the execution agent should perform. "
             "Only include essential actions that directly move the user toward their goal; "
-            "omit pleasantries or generic follow-ups unless explicitly requested."
+            "omit pleasantries or generic follow-ups unless explicitly requested. Each step must map to a single tool call. "
+            "If the user needs repeated actions (e.g., roll four times), output four distinct steps, one per iteration. "
+            "Remember calculator accepts exactly two inputs; create additional calculator steps to accumulate sums beyond two numbers, and refer to earlier outputs by step number (e.g., 'use step 1 result') rather than inventing new variables."
         )
 
         messages = [
@@ -204,6 +180,8 @@ class PlannerAgent:
                         continue
                     if self._is_filler_step(text_step):
                         continue
+                    if not self._mentions_tool(text_step):
+                        continue
                     planned_steps.append(text_step)
         except json.JSONDecodeError:
             pass
@@ -212,6 +190,14 @@ class PlannerAgent:
             planned_steps = [user_request]
 
         return planned_steps[: self.max_steps]
+
+    def _mentions_tool(self, step: str) -> bool:
+        lowered = step.lower()
+        for spec in self.tool_specs:
+            name = str(spec.get("name", "")).lower()
+            if name and name in lowered:
+                return True
+        return False
 
     @staticmethod
     def _is_filler_step(step: str) -> bool:
@@ -250,7 +236,8 @@ class PlannerAgent:
             f"Original request:\n{user_request}\n\n"
             f"You are executing plan step #{index}: {step}.\n"
             f"Previous step outputs:\n{previous}\n\n"
-            "Use the available tools to accomplish this step."
+            "Use the available tools to accomplish this step. Execute it exactly once?do not loop or batch. "
+            "Keep tool arguments singular (for example, leave roll_dice 'rolls' at 1 unless this step explicitly says otherwise)."
         )
 
     def _build_final_response(
