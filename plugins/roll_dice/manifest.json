@@ -1,0 +1,23 @@
+{
+  "name": "roll_dice",
+  "description": "Roll one or more dice with a configurable number of sides.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "sides": {
+        "type": "integer",
+        "minimum": 2,
+        "default": 6,
+        "description": "Number of sides on the die."
+      },
+      "rolls": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "How many dice to roll."
+      }
+    },
+    "required": []
+  },
+  "execution_function": "roll_dice"
+}

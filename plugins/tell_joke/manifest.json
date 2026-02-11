@@ -1,0 +1,10 @@
+{
+  "name": "tell_joke",
+  "description": "Return a random light-hearted joke.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "execution_function": "tell_joke"
+}

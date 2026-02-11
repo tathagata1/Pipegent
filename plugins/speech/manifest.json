@@ -1,0 +1,17 @@
+{
+  "name": "speech",
+  "description": "Send a natural-language reply back to the user.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "comment": {
+        "type": "string",
+        "description": "Text to say to the user."
+      }
+    },
+    "required": [
+      "comment"
+    ]
+  },
+  "execution_function": "speech"
+}

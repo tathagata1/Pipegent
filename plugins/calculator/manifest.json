@@ -1,0 +1,33 @@
+{
+  "name": "calculator",
+  "description": "Perform arithmetic on two numbers (add, subtract, multiply, divide).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "number",
+        "description": "First operand."
+      },
+      "b": {
+        "type": "number",
+        "description": "Second operand."
+      },
+      "operation": {
+        "type": "string",
+        "description": "Operation to execute.",
+        "enum": [
+          "add",
+          "subtract",
+          "multiply",
+          "divide"
+        ]
+      }
+    },
+    "required": [
+      "a",
+      "b",
+      "operation"
+    ]
+  },
+  "execution_function": "calculator"
+}

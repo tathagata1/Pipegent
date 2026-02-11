@@ -2,7 +2,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Any, Callable, Dict, List
 
 from openai import OpenAI
 from config import chatgpt_key
@@ -10,60 +10,7 @@ from config import chatgpt_key
 os.environ["OPENAI_API_KEY"] = chatgpt_key
 client = OpenAI()
 
-def load_plugins(plugins_dir: Path) -> Dict[str, Callable]:
-    tools: Dict[str, Callable] = {}
-
-    if not plugins_dir.exists():
-        return tools
-
-    for plugin_dir in plugins_dir.iterdir():
-        if not plugin_dir.is_dir():
-            continue
-
-        module_path = plugin_dir / "function.py"
-        if not module_path.exists():
-            continue
-
-        spec = importlib.util.spec_from_file_location(
-            f"plugins.{plugin_dir.name}.function", module_path
-        )
-        if spec is None or spec.loader is None:
-            continue
-
-        module = importlib.util.module_from_spec(spec)
-        try:
-            spec.loader.exec_module(module)  # type: ignore[call-arg]
-        except Exception as exc:
-            print(f"Failed to load plugin '{plugin_dir.name}': {exc}")
-            continue
-
-        register = getattr(module, "register", None)
-        if not callable(register):
-            print(f"Plugin '{plugin_dir.name}' missing register()")
-            continue
-
-        try:
-            name, func = register()
-        except Exception as exc:
-            print(f"Plugin '{plugin_dir.name}' register() error: {exc}")
-            continue
-
-        if not callable(func):
-            print(f"Plugin '{plugin_dir.name}' register() must return callable")
-            continue
-
-        tools[name] = func
-
-    return tools
-
-
-TOOLS = load_plugins(Path(__file__).parent / "plugins")
-
-# -------------------
-# Agent Loop
-# -------------------
-
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT_TEMPLATE = """
 You are a strict tool-using AI agent.
 
 RULES:
@@ -73,20 +20,111 @@ RULES:
    - Never explain your reasoning.
 
 2. Available tools and required args:
-   - calculator(a: float, b: float, operation: "add"|"subtract"|"multiply"|"divide")
-   - get_time()  # no args
-   - get_date()  # no args
-   - tell_joke()  # no args
-   - coin_flip()  # no args
-   - roll_dice(sides: int = 6, rolls: int = 1)
-   - speech(comment: str)  # use for natural-language replies
+{tools_block}
 
 3. A tool call is mandatory for every response. If nothing else fits, call speech with the words you want to say.
 """
 
+
+def load_plugins(plugins_dir: Path) -> tuple[Dict[str, Callable], List[Dict[str, Any]]]:
+    tools: Dict[str, Callable] = {}
+    manifests: List[Dict[str, Any]] = []
+
+    if not plugins_dir.exists():
+        return tools, manifests
+
+    for plugin_dir in plugins_dir.iterdir():
+        if not plugin_dir.is_dir():
+            continue
+
+        module_path = plugin_dir / "function.py"
+        manifest_path = plugin_dir / "manifest.json"
+        if not module_path.exists() or not manifest_path.exists():
+            print(f"Plugin '{plugin_dir.name}' is missing required files.")
+            continue
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            print(f"Plugin '{plugin_dir.name}' has invalid manifest: {exc}")
+            continue
+
+        name = manifest.get("name")
+        description = manifest.get("description", "No description provided.")
+        input_schema = manifest.get("input_schema")
+        function_name = manifest.get("execution_function")
+
+        if not isinstance(name, str) or not name:
+            print(f"Plugin '{plugin_dir.name}' missing valid name in manifest.")
+            continue
+        if not isinstance(function_name, str) or not function_name:
+            print(f"Plugin '{plugin_dir.name}' missing execution_function.")
+            continue
+        if not isinstance(input_schema, dict):
+            input_schema = {"type": "object", "properties": {}}
+
+        spec = importlib.util.spec_from_file_location(
+            f"plugins.{plugin_dir.name}.function", module_path
+        )
+        if spec is None or spec.loader is None:
+            print(f"Plugin '{plugin_dir.name}' could not build import spec.")
+            continue
+
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)  # type: ignore[call-arg]
+        except Exception as exc:
+            print(f"Failed to load plugin '{plugin_dir.name}': {exc}")
+            continue
+
+        func = getattr(module, function_name, None)
+        if not callable(func):
+            print(f"Plugin '{plugin_dir.name}' execution function '{function_name}' is invalid.")
+            continue
+
+        tools[name] = func
+        manifests.append(
+            {
+                "name": name,
+                "description": description,
+                "input_schema": input_schema,
+            }
+        )
+
+    return tools, manifests
+
+
+def build_system_prompt(tool_specs: List[Dict[str, Any]]) -> str:
+    tool_lines: List[str] = []
+    for spec in tool_specs:
+        name = spec.get("name", "unknown_tool")
+        description = spec.get("description", "No description provided.")
+        schema = spec.get("input_schema", {})
+        schema_json = json.dumps(schema, ensure_ascii=True)
+        tool_lines.append(
+            f"   - {name}: {description}\n     input_schema: {schema_json}"
+        )
+
+    if not tool_lines:
+        fallback_schema = json.dumps(
+            {"type": "object", "properties": {"comment": {"type": "string"}}, "required": ["comment"]},
+            ensure_ascii=True,
+        )
+        tool_lines.append(
+            f"   - speech(comment: str): Default speech output\n     input_schema: {fallback_schema}"
+        )
+
+    tools_block = "\n".join(tool_lines)
+    return SYSTEM_PROMPT_TEMPLATE.replace("{tools_block}", tools_block)
+
+
+TOOLS, TOOL_SPECS = load_plugins(Path(__file__).parent / "plugins")
+SYSTEM_PROMPT = build_system_prompt(TOOL_SPECS)
+
 CONVERSATION_HISTORY: List[Dict[str, str]] = [
     {"role": "system", "content": SYSTEM_PROMPT}
 ]
+
 
 def run_agent(user_input: str):
     CONVERSATION_HISTORY.append({"role": "user", "content": user_input})
@@ -161,6 +199,7 @@ def run_agent(user_input: str):
         return TOOLS[final_tool_name](**final_args)
     except Exception as exc:
         return f"Final tool '{final_tool_name}' error: {exc}"
+
 
 # -------------------
 # Run

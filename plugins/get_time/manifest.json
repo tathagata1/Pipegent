@@ -1,0 +1,10 @@
+{
+  "name": "get_time",
+  "description": "Return the current local time in HH:MM:SS format.",
+  "input_schema": {
+    "type": "object",
+    "properties": {},
+    "required": []
+  },
+  "execution_function": "get_time"
+}
