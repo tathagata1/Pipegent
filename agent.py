@@ -1,10 +1,14 @@
-import json
-from typing import Callable, Dict, List
+﻿import json
+import secrets
+from pathlib import Path
+from typing import Any, Callable, Dict, List
 
 from openai import OpenAI
 
 
-class Agent:
+class ToolExecutor:
+    """Runs individual instructions by forcing the executor LLM to use tools."""
+
     def __init__(
         self,
         client: OpenAI,
@@ -15,25 +19,25 @@ class Agent:
     ) -> None:
         self.client = client
         self.tools = tools
+        self.system_prompt = system_prompt
         self.model = model
         self.temperature = temperature
-        self.history: List[Dict[str, str]] = [
-            {"role": "system", "content": system_prompt}
-        ]
 
-    def run(self, user_input: str) -> str:
-        self.history.append({"role": "user", "content": user_input})
+    def execute(self, instruction: str) -> str:
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": instruction},
+        ]
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=self.history,
+            messages=messages,
             temperature=self.temperature,
         )
 
         content = response.choices[0].message.content.strip()
-        print("LLM Response:", content)
-
-        self.history.append({"role": "assistant", "content": content})
+        print("Executor LLM Response:", content)
+        messages.append({"role": "assistant", "content": content})
 
         try:
             tool_call = json.loads(content)
@@ -44,9 +48,7 @@ class Agent:
             return content
 
         tool_name = tool_call["tool"]
-        args = tool_call.get("args")
-        if not isinstance(args, dict):
-            args = {k: v for k, v in tool_call.items() if k != "tool"}
+        args = self._normalize_args(tool_call)
 
         if tool_name not in self.tools:
             return f"Unknown tool: {tool_name}"
@@ -54,25 +56,23 @@ class Agent:
         result = self.tools[tool_name](**args)
 
         if tool_name == "speech":
-            self.history.append({"role": "assistant", "content": result})
-            return result
+            return str(result)
 
-        tool_result_message = {
-            "role": "user",
-            "content": f"Tool '{tool_name}' result: {result}",
-        }
-        self.history.append(tool_result_message)
+        messages.append(
+            {
+                "role": "user",
+                "content": f"Tool '{tool_name}' result: {result}",
+            }
+        )
 
         final_response = self.client.chat.completions.create(
             model=self.model,
-            messages=self.history,
+            messages=messages,
             temperature=self.temperature,
         )
 
         final_content = final_response.choices[0].message.content.strip()
-        print("LLM Final Response:", final_content)
-
-        self.history.append({"role": "assistant", "content": final_content})
+        print("Executor Final Response:", final_content)
 
         try:
             final_tool = json.loads(final_content)
@@ -83,14 +83,197 @@ class Agent:
             return final_content
 
         final_tool_name = final_tool["tool"]
-        final_args = final_tool.get("args")
-        if not isinstance(final_args, dict):
-            final_args = {k: v for k, v in final_tool.items() if k != "tool"}
+        final_args = self._normalize_args(final_tool)
 
         if final_tool_name not in self.tools:
             return f"Unknown tool: {final_tool_name}"
 
         try:
-            return self.tools[final_tool_name](**final_args)
+            return str(self.tools[final_tool_name](**final_args))
         except Exception as exc:
             return f"Final tool '{final_tool_name}' error: {exc}"
+
+    @staticmethod
+    def _normalize_args(payload: Dict[str, Any]) -> Dict[str, Any]:
+        args = payload.get("args")
+        if isinstance(args, dict):
+            return args
+        return {k: v for k, v in payload.items() if k != "tool"}
+
+
+class PlannerAgent:
+    PLAN_SYSTEM_PROMPT = (
+        "You are Pipegent's planning LLM. Break user goals into an ordered list of "
+        "concrete steps that a separate execution agent can follow. Produce strictly "
+        "valid JSON that looks like {{\"steps\": [\"step description\", ...]}} and do not exceed "
+        "{max_steps} steps."
+    )
+    SUMMARY_SYSTEM_PROMPT = (
+        "You are Pipegent's planning LLM. Given the original request and the outputs "
+        "from each executed step, craft a final response for the user that cites the "
+        "completed work."
+    )
+
+    def __init__(
+        self,
+        client: OpenAI,
+        executor: ToolExecutor,
+        tool_specs: List[Dict[str, Any]],
+        planner_model: str,
+        planner_temperature: float,
+        max_steps: int,
+        temp_dir: Path,
+    ) -> None:
+        self.client = client
+        self.executor = executor
+        self.tool_specs = tool_specs
+        self.planner_model = planner_model
+        self.planner_temperature = planner_temperature
+        self.max_steps = max(1, max_steps)
+        self.temp_dir = temp_dir
+
+    def handle_request(self, user_request: str) -> str:
+        created_files: List[Path] = []
+        try:
+            steps = self._plan_steps(user_request)
+            if not steps:
+                steps = [user_request]
+            steps = steps[: self.max_steps]
+
+            step_results: List[Dict[str, Any]] = []
+            for index, step in enumerate(steps, start=1):
+                instruction = self._build_executor_instruction(
+                    user_request, step, index, step_results
+                )
+                result_text = self.executor.execute(instruction)
+                file_path = self._write_temp_file(result_text)
+                created_files.append(file_path)
+                step_results.append(
+                    {
+                        "step": step,
+                        "result": result_text,
+                        "file_path": str(file_path),
+                    }
+                )
+
+            return self._build_final_response(user_request, steps, step_results)
+        except Exception as exc:
+            return f"Planner error: {exc}"
+        finally:
+            self._cleanup_temp_files(created_files)
+
+    def _plan_steps(self, user_request: str) -> List[str]:
+        tool_lines = "\n".join(
+            f"- {spec.get('name')}: {spec.get('description')}" for spec in self.tool_specs
+        ) or "(No plugins available)"
+
+        user_prompt = (
+            f"User request:\n{user_request}\n\nAvailable tools:\n{tool_lines}\n\n"
+            f"Create at most {self.max_steps} ordered steps that the execution agent should perform."
+        )
+
+        messages = [
+            {
+                "role": "system",
+                "content": self.PLAN_SYSTEM_PROMPT.format(max_steps=self.max_steps),
+            },
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.planner_model,
+            messages=messages,
+            temperature=self.planner_temperature,
+        )
+
+        content = response.choices[0].message.content.strip()
+        print("Planner Plan Response:", content)
+
+        try:
+            parsed = json.loads(content)
+            steps = parsed.get("steps", [])
+            if isinstance(steps, list):
+                return [str(step) for step in steps if str(step).strip()]
+        except json.JSONDecodeError:
+            pass
+
+        return [user_request]
+
+    def _build_executor_instruction(
+        self,
+        user_request: str,
+        step: str,
+        index: int,
+        prior_results: List[Dict[str, Any]],
+    ) -> str:
+        if prior_results:
+            previous = "\n\n".join(
+                f"Step {idx + 1}: {entry['step']}\nFile: {entry['file_path']}\nOutput preview: {entry['result'][:300]}"
+                for idx, entry in enumerate(prior_results)
+            )
+        else:
+            previous = "None yet."
+
+        return (
+            f"Original request:\n{user_request}\n\n"
+            f"You are executing plan step #{index}: {step}.\n"
+            f"Previous step outputs:\n{previous}\n\n"
+            "Use the available tools to accomplish this step."
+        )
+
+    def _build_final_response(
+        self,
+        user_request: str,
+        steps: List[str],
+        results: List[Dict[str, Any]],
+    ) -> str:
+        payload = {
+            "user_request": user_request,
+            "steps": steps,
+            "results": [
+                {
+                    "step": entry["step"],
+                    "output": entry["result"],
+                }
+                for entry in results
+            ],
+        }
+
+        messages = [
+            {"role": "system", "content": self.SUMMARY_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "Craft the final response for the user using this context:\n"
+                    + json.dumps(payload, ensure_ascii=False)
+                ),
+            },
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.planner_model,
+            messages=messages,
+            temperature=self.planner_temperature,
+        )
+
+        final_content = response.choices[0].message.content.strip()
+        return final_content
+
+    def _write_temp_file(self, data: str) -> Path:
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+        filename = secrets.token_hex(8) + ".txt"
+        file_path = self.temp_dir / filename
+        file_path.write_text(str(data), encoding="utf-8")
+        return file_path
+
+    def _cleanup_temp_files(self, files: List[Path]) -> None:
+        for file_path in files:
+            try:
+                file_path.unlink()
+            except FileNotFoundError:
+                pass
+        try:
+            if self.temp_dir.exists() and not any(self.temp_dir.iterdir()):
+                self.temp_dir.rmdir()
+        except OSError:
+            pass

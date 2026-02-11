@@ -1,15 +1,22 @@
-import os
+﻿import os
 from pathlib import Path
 
 from openai import OpenAI
 
-from agent import Agent
-from config import agent_model, agent_temperature, chatgpt_key
+from agent import PlannerAgent, ToolExecutor
+from config import (
+    chatgpt_key,
+    executor_model,
+    executor_temperature,
+    max_steps,
+    planner_model,
+    planner_temperature,
+)
 from plugin_manager import load_plugins
 from prompt_builder import build_system_prompt
 
 
-def create_agent() -> Agent:
+def create_agent() -> PlannerAgent:
     os.environ["OPENAI_API_KEY"] = chatgpt_key
     client = OpenAI()
 
@@ -19,12 +26,24 @@ def create_agent() -> Agent:
         raise RuntimeError("No plugins were loaded. Ensure manifest.json files are valid.")
 
     system_prompt = build_system_prompt(tool_specs)
-    return Agent(
+    executor = ToolExecutor(
         client=client,
         tools=tools,
         system_prompt=system_prompt,
-        model=agent_model,
-        temperature=agent_temperature,
+        model=executor_model,
+        temperature=executor_temperature,
+    )
+
+    temp_dir = Path(__file__).parent / "tempstore"
+
+    return PlannerAgent(
+        client=client,
+        executor=executor,
+        tool_specs=tool_specs,
+        planner_model=planner_model,
+        planner_temperature=planner_temperature,
+        max_steps=max_steps,
+        temp_dir=temp_dir,
     )
 
 
@@ -40,7 +59,7 @@ def main() -> None:
         if user_input.strip().lower() in {"exit", "quit"}:
             break
 
-        reply = agent.run(user_input)
+        reply = agent.handle_request(user_input)
         print("Agent:", reply)
 
 
