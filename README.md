@@ -2,6 +2,8 @@
 
 Pipegent is an open-source, tool-first AI agent that routes every user request through explicit tools. The agent core stays minimal while real capabilities come from plugins that you can create, configure, and share. This repository bundles the runtime, a manifest-based plugin loader, and a handful of starter plugins (calculator, coin flip, date/time, dice rolling, jokes, and speech output).
 
+> **Before you run Pipegent:** install all dependencies with `pip install -r requirements.txt`.
+
 ## Features
 - **Plugin-first design** – every capability lives in `plugins/<name>/function.py` and exposes its API via `manifest.json`.
 - **Manifest-driven prompts** – the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
@@ -98,10 +100,10 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 Pipegent now ships with a broad starter suite so most automation tasks can be handled without writing new tools:
 - **Filesystem helpers** – `file_manager` safely copies/moves/deletes files inside the repo, while `archive_manager` zips or unzips directories with path-traversal protection.
 - **Data fetchers** – `web_scraper`, `http_post_json`, `rss_reader`, `github_repo_fetcher`, and `email_sender` cover general HTTP GET/POST flows, feed parsing, GitHub API access, and SMTP delivery (credentials never echoed back into responses).
-- **Local integrations** – `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl` for spreadsheets), and `image_ocr` pipes images through Tesseract via `pytesseract` + Pillow.
+- **Local integrations** – `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl`), `xlsx_writer` outputs structured workbooks, `xls_reader` handles legacy Excel files, `docx_reader`/`docx_writer` manage Word docs, and `pptx_reader`/`pptx_writer` cover slide decks (via `python-docx`/`python-pptx`).
 - **Text + utility set** – Calculator, dice/coin, speech, and string casing plugins continue to exist so legacy prompts remain compatible.
 
-> Optional dependencies: install `openpyxl`, `pillow`, and `pytesseract` (plus the native Tesseract binary) if you plan to use spreadsheet parsing or OCR.
+> Optional dependencies: install `openpyxl`, `xlrd`, `python-docx`, `python-pptx`, `pillow`, and `pytesseract` (plus the native Tesseract binary) to unlock spreadsheet/Office/OCR tooling.
 
 ## Logging & Telemetry
 - Every run generates `logs/pipegent_<timestamp>.log` with INFO-level summaries and DEBUG traces of planner/executor/tool activity. Console output stays minimal (`You:`, `thinking...`, `Agent:`) to emphasize the user dialogue.

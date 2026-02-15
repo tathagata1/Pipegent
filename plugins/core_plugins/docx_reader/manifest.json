@@ -1,0 +1,19 @@
+{
+  "name": "docx_reader",
+  "description": "Read paragraphs (and optionally table cells) from a DOCX file within the workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to the .docx file."
+      },
+      "include_tables": {
+        "type": "boolean",
+        "description": "If true, append table cell text after paragraphs."
+      }
+    },
+    "required": ["file_path"]
+  },
+  "execution_function": "docx_reader"
+}

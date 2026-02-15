@@ -1,0 +1,27 @@
+{
+  "name": "xls_reader",
+  "description": "Read legacy .xls spreadsheets (Excel 97-2003) and return row data.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to the .xls workbook."
+      },
+      "sheet_name": {
+        "type": "string",
+        "description": "Optional sheet to read (defaults to the first sheet)."
+      },
+      "max_rows": {
+        "type": "integer",
+        "description": "Maximum number of rows to include (default 200)."
+      },
+      "has_header": {
+        "type": "boolean",
+        "description": "Treat first row as header if true (default true)."
+      }
+    },
+    "required": ["file_path"]
+  },
+  "execution_function": "xls_reader"
+}

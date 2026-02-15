@@ -1,0 +1,31 @@
+{
+  "name": "docx_writer",
+  "description": "Create or overwrite a DOCX file with structured paragraphs and optional headings.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Where to save the .docx file (relative to workspace by default)."
+      },
+      "paragraphs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "text": { "type": "string" },
+            "style": { "type": "string", "description": "Any valid Word style name (e.g., Heading 1)." }
+          },
+          "required": ["text"]
+        },
+        "description": "Ordered paragraphs/headings to write."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "Set true to replace existing files (default false)."
+      }
+    },
+    "required": ["file_path", "paragraphs"]
+  },
+  "execution_function": "docx_writer"
+}

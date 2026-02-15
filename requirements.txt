@@ -1,1 +1,7 @@
 openai>=1.55.3
+pillow
+pytesseract
+python-docx
+python-pptx
+openpyxl
+xlrd

@@ -1,0 +1,36 @@
+{
+  "name": "xlsx_writer",
+  "description": "Create or overwrite an .xlsx workbook from structured row data.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Where to save the .xlsx file."
+      },
+      "sheet_name": {
+        "type": "string",
+        "description": "Optional worksheet name (default 'Sheet1')."
+      },
+      "headers": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Optional header row that will be written before the data rows."
+      },
+      "rows": {
+        "type": "array",
+        "items": {
+          "type": "array",
+          "items": {}
+        },
+        "description": "Two-dimensional array representing the table data."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "Set true to replace an existing file (default false)."
+      }
+    },
+    "required": ["file_path", "rows"]
+  },
+  "execution_function": "xlsx_writer"
+}

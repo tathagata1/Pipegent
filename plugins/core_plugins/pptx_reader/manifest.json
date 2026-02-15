@@ -1,0 +1,19 @@
+{
+  "name": "pptx_reader",
+  "description": "Extract slide text (and optionally notes) from a PowerPoint .pptx deck.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to the .pptx file."
+      },
+      "include_notes": {
+        "type": "boolean",
+        "description": "Include speaker notes if true."
+      }
+    },
+    "required": ["file_path"]
+  },
+  "execution_function": "pptx_reader"
+}

@@ -1,0 +1,34 @@
+{
+  "name": "pptx_writer",
+  "description": "Generate a PowerPoint presentation from structured slide content.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Destination .pptx path."
+      },
+      "slides": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "bullets": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          },
+          "required": ["title"]
+        },
+        "description": "Ordered slide definitions with titles and optional bullet lists."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "Set true to replace an existing file (default false)."
+      }
+    },
+    "required": ["file_path", "slides"]
+  },
+  "execution_function": "pptx_writer"
+}
