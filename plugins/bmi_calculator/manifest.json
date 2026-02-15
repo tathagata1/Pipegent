@@ -1,0 +1,22 @@
+{
+  "name": "bmi_calculator",
+  "description": "Calculate BMI and provide a category based on weight and height.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "weight_kg": {
+        "type": "number",
+        "description": "Weight in kilograms."
+      },
+      "height_cm": {
+        "type": "number",
+        "description": "Height in centimeters."
+      }
+    },
+    "required": [
+      "weight_kg",
+      "height_cm"
+    ]
+  },
+  "execution_function": "bmi_calculator"
+}

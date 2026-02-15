@@ -1,0 +1,17 @@
+{
+  "name": "uuid_generator",
+  "description": "Create one or more random UUID v4 strings.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "count": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 20,
+        "description": "How many UUIDs to generate (max 20, default 1)."
+      }
+    },
+    "required": []
+  },
+  "execution_function": "uuid_generator"
+}

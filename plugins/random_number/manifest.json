@@ -1,0 +1,19 @@
+{
+  "name": "random_number",
+  "description": "Generate a random integer within an inclusive range.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "min_value": {
+        "type": "integer",
+        "description": "Minimum value (inclusive, default 0)."
+      },
+      "max_value": {
+        "type": "integer",
+        "description": "Maximum value (inclusive, default 100)."
+      }
+    },
+    "required": []
+  },
+  "execution_function": "random_number"
+}

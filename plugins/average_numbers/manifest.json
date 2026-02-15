@@ -1,0 +1,19 @@
+{
+  "name": "average_numbers",
+  "description": "Return average, min, max, and count for a list of numbers.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        },
+        "minItems": 1,
+        "description": "List of numeric values."
+      }
+    },
+    "required": ["numbers"]
+  },
+  "execution_function": "average_numbers"
+}

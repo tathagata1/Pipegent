@@ -1,0 +1,29 @@
+{
+  "name": "distance_converter",
+  "description": "Convert between kilometers, miles, meters, and feet.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number",
+        "description": "Numeric distance to convert."
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": ["kilometers", "miles", "meters", "feet"],
+        "description": "Unit of the provided value."
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": ["kilometers", "miles", "meters", "feet"],
+        "description": "Desired output unit."
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "distance_converter"
+}

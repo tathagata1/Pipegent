@@ -1,0 +1,27 @@
+{
+  "name": "tip_calculator",
+  "description": "Compute a tip amount, new total, and per-person share.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number",
+        "description": "Original bill amount."
+      },
+      "tip_percent": {
+        "type": "number",
+        "description": "Tip percentage to apply."
+      },
+      "split_between": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Number of people splitting the bill."
+      }
+    },
+    "required": [
+      "amount",
+      "tip_percent"
+    ]
+  },
+  "execution_function": "tip_calculator"
+}

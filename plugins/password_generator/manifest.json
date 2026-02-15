@@ -1,0 +1,24 @@
+{
+  "name": "password_generator",
+  "description": "Generate a random password with optional digits and symbols.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "length": {
+        "type": "integer",
+        "minimum": 4,
+        "description": "Password length (default 12)."
+      },
+      "include_digits": {
+        "type": "boolean",
+        "description": "Whether to include digits (default true)."
+      },
+      "include_symbols": {
+        "type": "boolean",
+        "description": "Whether to include punctuation symbols (default true)."
+      }
+    },
+    "required": []
+  },
+  "execution_function": "password_generator"
+}

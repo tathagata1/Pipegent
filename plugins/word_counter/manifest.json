@@ -1,0 +1,15 @@
+{
+  "name": "word_counter",
+  "description": "Count words, unique words, and characters in text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Text to analyze."
+      }
+    },
+    "required": ["text"]
+  },
+  "execution_function": "word_counter"
+}

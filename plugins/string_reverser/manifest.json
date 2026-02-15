@@ -1,0 +1,15 @@
+{
+  "name": "string_reverser",
+  "description": "Reverse the supplied text exactly.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Text to reverse."
+      }
+    },
+    "required": ["text"]
+  },
+  "execution_function": "string_reverser"
+}

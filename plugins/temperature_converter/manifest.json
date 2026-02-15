@@ -1,0 +1,29 @@
+{
+  "name": "temperature_converter",
+  "description": "Convert a temperature value between Celsius, Fahrenheit, and Kelvin.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number",
+        "description": "Numeric temperature value."
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": ["celsius", "fahrenheit", "kelvin"],
+        "description": "Unit of the provided value."
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": ["celsius", "fahrenheit", "kelvin"],
+        "description": "Desired output unit."
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "temperature_converter"
+}
