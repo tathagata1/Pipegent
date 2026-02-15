@@ -3,3 +3,4 @@ system.config.ini
 *.pyc
 __pycache__/
 tempstore/*
+logs/

@@ -3,32 +3,33 @@
 Pipegent is an open-source, tool-first AI agent that routes every user request through explicit tools. The agent core stays minimal while real capabilities come from plugins that you can create, configure, and share. This repository bundles the runtime, a manifest-based plugin loader, and a handful of starter plugins (calculator, coin flip, date/time, dice rolling, jokes, and speech output).
 
 ## Features
-- **Plugin-first design** - each capability lives in `plugins/<name>/function.py` and exposes its API via `manifest.json`.
-- **Manifest-driven prompts** - the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
-- **Two-tier planning/execution** - a planner LLM decomposes requests into bounded steps and a dedicated executor LLM completes each step with the available tools, honoring `AGENT.max_steps` to avoid infinite loops.
-- **Ephemeral tempstore** - step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
-- **Config-driven OpenAI clients** - `system.config.ini` holds shared defaults while `user.config.ini` keeps developer-specific secrets such as API keys.
+- **Plugin-first design** – every capability lives in `plugins/<name>/function.py` and exposes its API via `manifest.json`.
+- **Manifest-driven prompts** – the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
+- **Two-tier planning/execution** – a planner LLM decomposes requests into bounded steps and a dedicated executor LLM completes each step with the available tools, honoring `AGENT.max_steps` to avoid infinite loops.
+- **Ephemeral tempstore** – step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
+- **Structured logging** – every run writes a time-stamped file under `logs/`, while the console stays minimal (`You:`, `thinking...`, `Agent:`). Logs capture planner/executor interactions, plugin-loading diagnostics, and failure traces without cluttering the terminal.
+- **Config-driven OpenAI clients** – `system.config.ini` holds shared defaults while `user.config.ini` keeps developer-specific secrets such as API keys.
 
 ## Repository Structure
 ```
 .
-|-- main.py                  # CLI entry point that wires config + plugins into the workflow
+|-- main.py                  # CLI entry point + logging bootstrap + REPL loop
 |-- config.py                # Configuration helper that merges system + user config layers
 |-- system.config.ini        # Repository defaults (models, temps, max steps)
 |-- user.config.ini          # Developer secrets and overrides (OpenAI key, etc.)
-|-- pipegent/                # Package with agents, prompts, and services
-|   |-- agents/
-|   |   |-- planner.py       # Planner agent orchestration logic
-|   |   `-- tool_executor.py # Executor that routes to plugins
-|   |-- prompts/
-|   |   `-- system_prompt.py # Builds executor system prompt from plugin specs
-|   `-- services/
-|       `-- plugin_loader.py # Loads/validates plugins and returns callables + manifest specs
-|-- requirements.txt         # Python dependencies (currently just the OpenAI SDK)
-`-- plugins/
-    `-- <plugin_name>/
-        |-- function.py
-        `-- manifest.json
+|-- agents/
+|   |-- planner.py           # Planner agent orchestration logic (+context persistence)
+|   `-- tool_executor.py     # Executor that routes to plugins
+|-- prompts/
+|   `-- system_prompt.py     # Builds executor system prompt from plugin specs
+|-- services/
+|   `-- plugin_loader.py     # Loads/validates plugins and returns callables + manifest specs
+|-- plugins/
+|   |-- core_plugins/        # First-party tools shipped with Pipegent
+|   `-- user_plugins/        # Space for custom/community tools
+|-- tempstore/               # Ephemeral files (auto-cleaned per run)
+|-- logs/                    # Structured execution logs (git-ignored)
+`-- requirements.txt         # Python dependencies (OpenAI SDK + optional extras)
 ```
 
 ## Setup
@@ -94,11 +95,17 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - The resulting manifest data feeds `pipegent.prompts.system_prompt.build_system_prompt()`, which injects every tool description + JSON schema into the executor system prompt.
 
 ## Bundled Core Plugins
-New capability-oriented plugins extend the baseline toolkit beyond text transforms:
-- **Filesystem helpers**: `file_manager` safely copies/moves/deletes files inside the repo, while `archive_manager` zips or unzips directories without path traversal risks.
-- **Data fetchers**: `web_scraper`, `http_post_json`, `rss_reader`, `github_repo_fetcher`, and `email_sender` cover general HTTP GET/POST flows, feed parsing, GitHub API access, and SMTP delivery (credentials never echoed back).
-- **Local integrations**: `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl` for spreadsheets), and `image_ocr` pipes images through Tesseract via `pytesseract`/Pillow.
-- **Utility set**: The earlier calculator, string transforms, dice/coin, etc., remain available so legacy prompts keep working.
+Pipegent now ships with a broad starter suite so most automation tasks can be handled without writing new tools:
+- **Filesystem helpers** – `file_manager` safely copies/moves/deletes files inside the repo, while `archive_manager` zips or unzips directories with path-traversal protection.
+- **Data fetchers** – `web_scraper`, `http_post_json`, `rss_reader`, `github_repo_fetcher`, and `email_sender` cover general HTTP GET/POST flows, feed parsing, GitHub API access, and SMTP delivery (credentials never echoed back into responses).
+- **Local integrations** – `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl` for spreadsheets), and `image_ocr` pipes images through Tesseract via `pytesseract` + Pillow.
+- **Text + utility set** – Calculator, dice/coin, speech, and string casing plugins continue to exist so legacy prompts remain compatible.
+
+> Optional dependencies: install `openpyxl`, `pillow`, and `pytesseract` (plus the native Tesseract binary) if you plan to use spreadsheet parsing or OCR.
+
+## Logging & Telemetry
+- Every run generates `logs/pipegent_<timestamp>.log` with INFO-level summaries and DEBUG traces of planner/executor/tool activity. Console output stays minimal (`You:`, `thinking...`, `Agent:`) to emphasize the user dialogue.
+- `tempstore/` continues to hold intermediate artifacts across steps; filenames are referenced inside logs for easier troubleshooting.
 
 ## Adding a New Plugin
 1. Create a folder under `plugins/`, e.g. `plugins/weather/`.

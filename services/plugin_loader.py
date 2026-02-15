@@ -1,7 +1,10 @@
 import importlib.util
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 class ManifestValidationError(ValueError):
     pass
@@ -71,39 +74,47 @@ def load_plugins(plugins_dir: Path) -> Tuple[Dict[str, Callable], List[Dict[str,
         module_path = plugin_dir / "function.py"
         manifest_path = plugin_dir / "manifest.json"
         if not module_path.exists() or not manifest_path.exists():
-            print(f"Plugin '{plugin_dir.name}' skipped: missing function.py or manifest.json")
+            logger.warning(
+                "Plugin '%s' skipped: missing function.py or manifest.json", plugin_dir.name
+            )
             continue
 
         try:
             manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
             manifest = _validate_manifest(manifest_data)
         except (json.JSONDecodeError, ManifestValidationError) as exc:
-            print(f"Plugin '{plugin_dir.name}' skipped: {exc}")
+            logger.warning("Plugin '%s' skipped: %s", plugin_dir.name, exc)
             continue
 
         spec = importlib.util.spec_from_file_location(
             f"plugins.{plugin_dir.name}.function", module_path
         )
         if spec is None or spec.loader is None:
-            print(f"Plugin '{plugin_dir.name}' skipped: could not create import spec")
+            logger.warning("Plugin '%s' skipped: could not create import spec", plugin_dir.name)
             continue
 
         module = importlib.util.module_from_spec(spec)
         try:
             spec.loader.exec_module(module)  # type: ignore[call-arg]
         except Exception as exc:
-            print(f"Plugin '{plugin_dir.name}' skipped: failed to load module ({exc})")
+            logger.exception("Plugin '%s' skipped: failed to load module (%s)", plugin_dir.name, exc)
             continue
 
         func = getattr(module, manifest["execution_function"], None)
         if not callable(func):
-            print(
-                f"Plugin '{plugin_dir.name}' skipped: execution function '{manifest['execution_function']}' is invalid"
+            logger.warning(
+                "Plugin '%s' skipped: execution function '%s' is invalid",
+                plugin_dir.name,
+                manifest["execution_function"],
             )
             continue
 
         if manifest["name"] in tools:
-            print(f"Duplicate plugin name '{manifest['name']}' detected; skipping '{plugin_dir.name}'")
+            logger.warning(
+                "Duplicate plugin name '%s' detected; skipping '%s'",
+                manifest["name"],
+                plugin_dir.name,
+            )
             continue
 
         tools[manifest["name"]] = func

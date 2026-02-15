@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -6,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from agents.tool_executor import ToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class PlannerAgent:
@@ -54,6 +57,7 @@ class PlannerAgent:
         self._load_context_history()
 
     def handle_request(self, user_request: str) -> str:
+        logger.info("Planner received request: %s", user_request)
         self._maybe_refresh_context_history()
         created_files: List[Path] = []
         final_response = ""
@@ -63,6 +67,7 @@ class PlannerAgent:
             steps = self._plan_steps(user_request)
 
             for index, step in enumerate(steps, start=1):
+                logger.info("Executing plan step %s/%s: %s", index, len(steps), step)
                 instruction = self._build_executor_instruction(
                     user_request, step, index, step_results
                 )
@@ -79,11 +84,13 @@ class PlannerAgent:
 
             final_response = self._build_final_response(user_request, steps, step_results)
         except Exception as exc:
+            logger.exception("Planner encountered an error while handling request.")
             final_response = f"Planner error: {exc}"
         finally:
             self._cleanup_temp_files(created_files)
             if final_response:
                 self._append_history(user_request, steps, step_results, final_response)
+                logger.info("Planner completed request with %s steps.", len(steps))
 
         return final_response
 
@@ -117,7 +124,7 @@ class PlannerAgent:
         )
 
         content = response.choices[0].message.content.strip()
-        print("Planner Plan Response:", content)
+        logger.debug("Planner plan response: %s", content)
 
         planned_steps: List[str] = []
         try:

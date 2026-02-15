@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import Any, Callable, Dict
 
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class ToolExecutor:
@@ -34,7 +37,7 @@ class ToolExecutor:
         )
 
         content = response.choices[0].message.content.strip()
-        print("Executor LLM Response:", content)
+        logger.debug("Executor response: %s", content)
         messages.append({"role": "assistant", "content": content})
 
         try:
