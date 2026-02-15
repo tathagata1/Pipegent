@@ -1,5 +1,5 @@
 
-def calculator(a: float, b: float, operation: str) -> float:
+def simple_calculator(a: float, b: float, operation: str) -> float:
     if operation == "add":
         return a + b
     if operation == "subtract":

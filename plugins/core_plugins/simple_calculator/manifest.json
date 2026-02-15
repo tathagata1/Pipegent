@@ -1,5 +1,5 @@
 {
-  "name": "calculator",
+  "name": "simple_calculator",
   "description": "Perform arithmetic on two numbers (add, subtract, multiply, divide).",
   "input_schema": {
     "type": "object",
@@ -29,5 +29,5 @@
       "operation"
     ]
   },
-  "execution_function": "calculator"
+  "execution_function": "simple_calculator"
 }
