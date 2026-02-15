@@ -4,7 +4,6 @@ from pathlib import Path
 
 from openai import OpenAI
 
-from agent import PlannerAgent, ToolExecutor
 from config import (
     chatgpt_key,
     executor_model,
@@ -13,8 +12,9 @@ from config import (
     planner_model,
     planner_temperature,
 )
-from plugin_manager import load_plugins
-from prompt_builder import build_system_prompt
+from agents import PlannerAgent, ToolExecutor
+from prompts import build_system_prompt
+from services import load_plugins
 
 
 def create_agent() -> PlannerAgent:

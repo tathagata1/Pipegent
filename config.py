@@ -1,11 +1,24 @@
 import configparser
 from pathlib import Path
+from typing import Iterable, List
 
-CONFIG_PATH = Path(__file__).with_name("config.ini")
+BASE_DIR = Path(__file__).resolve().parent
+SYSTEM_CONFIG_PATH = BASE_DIR / "system.config.ini"
+USER_CONFIG_PATH = BASE_DIR / "user.config.ini"
 
-config = configparser.ConfigParser()
-if not config.read(CONFIG_PATH):
-    raise FileNotFoundError(f"Missing config file: {CONFIG_PATH}")
+
+def _load_config(paths: Iterable[Path]) -> configparser.ConfigParser:
+    parser = configparser.ConfigParser()
+    read_files: List[str] = parser.read([str(path) for path in paths])
+
+    missing = [path for path in paths if str(path) not in read_files]
+    if missing:
+        missing_str = ", ".join(str(path) for path in missing)
+        raise FileNotFoundError(f"Missing config file(s): {missing_str}")
+    return parser
+
+
+config = _load_config([SYSTEM_CONFIG_PATH, USER_CONFIG_PATH])
 
 chatgpt_key = config["OPENAI"]["chatgpt_key"]
 

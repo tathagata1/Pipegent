@@ -7,21 +7,28 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - **Manifest-driven prompts** - the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
 - **Two-tier planning/execution** - a planner LLM decomposes requests into bounded steps and a dedicated executor LLM completes each step with the available tools, honoring `AGENT.max_steps` to avoid infinite loops.
 - **Ephemeral tempstore** - step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
-- **Config-driven OpenAI clients** - `config.ini` (derived from `example.copy.ini`) defines the OpenAI key plus independent planner/executor models and temperatures.
+- **Config-driven OpenAI clients** - `system.config.ini` holds shared defaults while `user.config.ini` keeps developer-specific secrets such as API keys.
 
 ## Repository Structure
 ```
 .
-|-- agent.py              # Planner agent + tool executor classes
-|-- main.py               # CLI entry point that wires config + plugins into the workflow
-|-- plugin_manager.py     # Loads/validates plugins and returns callables + manifest specs
-|-- prompt_builder.py     # Renders the executor system prompt from plugin metadata
-|-- config.py / config.ini# Configuration helpers and secrets (API keys, models, limits)
-|-- requirements.txt      # Python dependencies (currently just the OpenAI SDK)
+|-- main.py                  # CLI entry point that wires config + plugins into the workflow
+|-- config.py                # Configuration helper that merges system + user config layers
+|-- system.config.ini        # Repository defaults (models, temps, max steps)
+|-- user.config.ini          # Developer secrets and overrides (OpenAI key, etc.)
+|-- pipegent/                # Package with agents, prompts, and services
+|   |-- agents/
+|   |   |-- planner.py       # Planner agent orchestration logic
+|   |   `-- tool_executor.py # Executor that routes to plugins
+|   |-- prompts/
+|   |   `-- system_prompt.py # Builds executor system prompt from plugin specs
+|   `-- services/
+|       `-- plugin_loader.py # Loads/validates plugins and returns callables + manifest specs
+|-- requirements.txt         # Python dependencies (currently just the OpenAI SDK)
 `-- plugins/
     `-- <plugin_name>/
-        |-- function.py   # Python file that defines the callable exported in the manifest
-        `-- manifest.json # Metadata describing the tool (name, description, input schema)
+        |-- function.py
+        `-- manifest.json
 ```
 
 ## Setup
@@ -33,7 +40,9 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
    .venv\Scripts\activate  # Windows
    pip install -r requirements.txt
    ```
-2. **Configure credentials** by copying `example.copy.ini` to `config.ini` (or editing the existing file) and setting your OpenAI key plus model prefs:
+2. **Configure credentials**:
+   - Copy `example.copy.ini` to `system.config.ini` if you need a fresh baseline (or edit the existing file) to define default planner/executor settings.
+   - Create `user.config.ini` (git-ignored) for secrets and overrides, then set your OpenAI key plus any personal tweaks:
    ```ini
    [OPENAI]
    chatgpt_key = sk-...
@@ -81,8 +90,8 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
     "execution_function": "calculator"
   }
   ```
-- During startup `plugin_manager.load_plugins()` validates each manifest (type checks, required keys, object schemas) and imports the specified function from `function.py`. Invalid plugins are skipped with a console warning.
-- The resulting manifest data feeds `prompt_builder.build_system_prompt()`, which injects every tool description + JSON schema into the executor system prompt.
+- During startup `pipegent.services.plugin_loader.load_plugins()` validates each manifest (type checks, required keys, object schemas) and imports the specified function from `function.py`. Invalid plugins are skipped with a console warning.
+- The resulting manifest data feeds `pipegent.prompts.system_prompt.build_system_prompt()`, which injects every tool description + JSON schema into the executor system prompt.
 
 ## Adding a New Plugin
 1. Create a folder under `plugins/`, e.g. `plugins/weather/`.
@@ -101,5 +110,5 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - Keep `function.py` side-effect free and avoid global state; the executor imports each plugin module at startup.
 - Use descriptive `description` text and include argument hints in `input_schema` to guide the LLM toward valid args.
 - `tempstore/` is ignored by git and managed automatically, but you can inspect its contents during a run for debugging.
-- To trace plugin loading issues, temporarily instrument `plugin_manager.py` or run it directly to list which manifests pass validation.
-- If you change `config.ini`, restart the agent so the new planner/executor settings take effect.
+- To trace plugin loading issues, temporarily instrument `pipegent/services/plugin_loader.py` or run it directly to list which manifests pass validation.
+- If you change `system.config.ini` or `user.config.ini`, restart the agent so the new planner/executor settings take effect.

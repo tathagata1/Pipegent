@@ -1,71 +1,11 @@
-﻿import json
+import json
 import secrets
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Dict, List
 
 from openai import OpenAI
 
-
-class ToolExecutor:
-    """Runs individual instructions by forcing the executor LLM to use tools."""
-
-    def __init__(
-        self,
-        client: OpenAI,
-        tools: Dict[str, Callable],
-        system_prompt: str,
-        model: str,
-        temperature: float,
-    ) -> None:
-        self.client = client
-        self.tools = tools
-        self.system_prompt = system_prompt
-        self.model = model
-        self.temperature = temperature
-
-    def execute(self, instruction: str) -> str:
-        messages = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": instruction},
-        ]
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-        )
-
-        content = response.choices[0].message.content.strip()
-        print("Executor LLM Response:", content)
-        messages.append({"role": "assistant", "content": content})
-
-        try:
-            tool_call = json.loads(content)
-        except json.JSONDecodeError:
-            return content
-
-        if not isinstance(tool_call, dict) or "tool" not in tool_call:
-            return content
-
-        tool_name = tool_call["tool"]
-        args = self._normalize_args(tool_call)
-
-        if tool_name not in self.tools:
-            return f"Unknown tool: {tool_name}"
-
-        result = self.tools[tool_name](**args)
-
-        if tool_name == "speech":
-            return str(result)
-
-        return f"{tool_name} result: {result}"
-
-    @staticmethod
-    def _normalize_args(payload: Dict[str, Any]) -> Dict[str, Any]:
-        args = payload.get("args")
-        if isinstance(args, dict):
-            return args
-        return {k: v for k, v in payload.items() if k != "tool"}
+from agents.tool_executor import ToolExecutor
 
 
 class PlannerAgent:
@@ -76,7 +16,7 @@ class PlannerAgent:
         "only as many steps as are truly required (between 1 and {max_steps}). Skip filler "
         "actions like greetings, generic follow-up questions, or waiting unless the user "
         "explicitly requests them. Each step must correspond to exactly one tool invocation "
-        "or simple action?never describe loops or say 'repeat'; instead enumerate every "
+        "or simple action - never describe loops or say 'repeat'; instead enumerate every "
         "iteration explicitly (e.g., four dice rolls = four separate steps). Mention the "
         "tool to call (e.g., roll_dice, calculator) in each step. When using roll_dice, "
         "state rolls=1 unless the user explicitly asks for a different value. Remember that the "
@@ -241,7 +181,7 @@ class PlannerAgent:
             f"Original request:\n{user_request}\n\n"
             f"You are executing plan step #{index}: {step}.\n"
             f"Previous step outputs:\n{previous}\n\n"
-            "Use the available tools to accomplish this step. Execute it exactly once?do not loop or batch. "
+            "Use the available tools to accomplish this step. Execute it exactly once - do not loop or batch. "
             "Keep tool arguments singular (for example, leave roll_dice 'rolls' at 1 unless this step explicitly says otherwise)."
         )
 
@@ -345,4 +285,3 @@ class PlannerAgent:
                 ),
             }
         )
-
