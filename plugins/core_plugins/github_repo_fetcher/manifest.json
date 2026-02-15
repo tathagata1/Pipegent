@@ -1,0 +1,31 @@
+{
+  "name": "github_repo_fetcher",
+  "description": "Retrieve GitHub repository metadata and optionally fetch a file's contents via the GitHub API.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "owner": {
+        "type": "string",
+        "description": "Repository owner or organization."
+      },
+      "repo": {
+        "type": "string",
+        "description": "Repository name."
+      },
+      "branch": {
+        "type": "string",
+        "description": "Branch or ref to target (default default branch)."
+      },
+      "path": {
+        "type": "string",
+        "description": "Optional file path within the repository to fetch."
+      },
+      "auth_token": {
+        "type": "string",
+        "description": "Optional GitHub personal access token for private repos or higher rate limits."
+      }
+    },
+    "required": ["owner", "repo"]
+  },
+  "execution_function": "github_repo_fetcher"
+}

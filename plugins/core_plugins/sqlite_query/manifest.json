@@ -1,0 +1,27 @@
+{
+  "name": "sqlite_query",
+  "description": "Execute parameterized read/write SQL statements against SQLite databases stored in the workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "db_path": {
+        "type": "string",
+        "description": "Path to the SQLite .db file (must reside inside the project)."
+      },
+      "query": {
+        "type": "string",
+        "description": "SQL statement to execute."
+      },
+      "parameters": {
+        "type": "array",
+        "description": "Optional positional parameters for the SQL statement."
+      },
+      "max_rows": {
+        "type": "integer",
+        "description": "Maximum rows to return for SELECT queries (default 50)."
+      }
+    },
+    "required": ["db_path", "query"]
+  },
+  "execution_function": "sqlite_query"
+}

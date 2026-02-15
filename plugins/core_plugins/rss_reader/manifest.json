@@ -1,0 +1,23 @@
+{
+  "name": "rss_reader",
+  "description": "Fetch and parse an RSS or Atom feed, returning the latest entries.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Feed URL."
+      },
+      "max_items": {
+        "type": "integer",
+        "description": "Maximum number of entries to return (default 10, max 50)."
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Seconds before the request times out (default 15)."
+      }
+    },
+    "required": ["url"]
+  },
+  "execution_function": "rss_reader"
+}

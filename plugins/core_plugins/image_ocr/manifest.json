@@ -1,0 +1,23 @@
+{
+  "name": "image_ocr",
+  "description": "Extract text from an image using Tesseract (via pytesseract).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "image_path": {
+        "type": "string",
+        "description": "Path to the image file (PNG/JPG/GIF/BMP/PDF) inside the project."
+      },
+      "language": {
+        "type": "string",
+        "description": "Tesseract language code (default 'eng')."
+      },
+      "tesseract_cmd": {
+        "type": "string",
+        "description": "Optional absolute path to the Tesseract executable if not on PATH."
+      }
+    },
+    "required": ["image_path"]
+  },
+  "execution_function": "image_ocr"
+}

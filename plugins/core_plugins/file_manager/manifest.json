@@ -1,0 +1,28 @@
+{
+  "name": "file_manager",
+  "description": "Copy, move, or delete files within the project workspace using safety checks that prevent escaping the repository root.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["copy", "move", "delete"],
+        "description": "Filesystem action to perform."
+      },
+      "source_path": {
+        "type": "string",
+        "description": "Path to the source file. Required for copy and move."
+      },
+      "destination_path": {
+        "type": "string",
+        "description": "Target path for copy or move actions."
+      },
+      "force": {
+        "type": "boolean",
+        "description": "If true, overwrite existing destination files for copy/move."
+      }
+    },
+    "required": ["action"]
+  },
+  "execution_function": "file_manager"
+}

@@ -1,0 +1,33 @@
+{
+  "name": "archive_manager",
+  "description": "Create or extract ZIP archives within the project workspace.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["zip", "unzip"],
+        "description": "Choose 'zip' to create an archive or 'unzip' to extract an existing archive."
+      },
+      "archive_path": {
+        "type": "string",
+        "description": "Path to the archive file. Required for both actions."
+      },
+      "source_paths": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "List of files to include when creating a zip archive."
+      },
+      "extract_to": {
+        "type": "string",
+        "description": "Directory where the archive should be extracted."
+      },
+      "overwrite": {
+        "type": "boolean",
+        "description": "When extracting, allow overwriting files if true."
+      }
+    },
+    "required": ["action", "archive_path"]
+  },
+  "execution_function": "archive_manager"
+}

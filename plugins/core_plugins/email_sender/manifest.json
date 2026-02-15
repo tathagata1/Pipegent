@@ -1,0 +1,25 @@
+{
+  "name": "email_sender",
+  "description": "Send an email via SMTP with STARTTLS or SSL, masking sensitive credentials in responses.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "smtp_host": { "type": "string", "description": "SMTP server hostname." },
+      "smtp_port": { "type": "integer", "description": "SMTP server port." },
+      "use_tls": { "type": "boolean", "description": "Use STARTTLS after connecting (default true)." },
+      "use_ssl": { "type": "boolean", "description": "Connect with implicit SSL (default false)." },
+      "username": { "type": "string", "description": "SMTP username (optional for anonymous servers)." },
+      "password": { "type": "string", "description": "SMTP password. Never logged or returned." },
+      "from_address": { "type": "string", "description": "Email address of the sender." },
+      "to_addresses": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "List of recipient email addresses."
+      },
+      "subject": { "type": "string", "description": "Email subject." },
+      "body": { "type": "string", "description": "Plain-text body content." }
+    },
+    "required": ["smtp_host", "smtp_port", "from_address", "to_addresses", "subject", "body"]
+  },
+  "execution_function": "email_sender"
+}

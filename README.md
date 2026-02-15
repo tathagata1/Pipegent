@@ -93,6 +93,13 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - During startup `pipegent.services.plugin_loader.load_plugins()` validates each manifest (type checks, required keys, object schemas) and imports the specified function from `function.py`. Invalid plugins are skipped with a console warning.
 - The resulting manifest data feeds `pipegent.prompts.system_prompt.build_system_prompt()`, which injects every tool description + JSON schema into the executor system prompt.
 
+## Bundled Core Plugins
+New capability-oriented plugins extend the baseline toolkit beyond text transforms:
+- **Filesystem helpers**: `file_manager` safely copies/moves/deletes files inside the repo, while `archive_manager` zips or unzips directories without path traversal risks.
+- **Data fetchers**: `web_scraper`, `http_post_json`, `rss_reader`, `github_repo_fetcher`, and `email_sender` cover general HTTP GET/POST flows, feed parsing, GitHub API access, and SMTP delivery (credentials never echoed back).
+- **Local integrations**: `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl` for spreadsheets), and `image_ocr` pipes images through Tesseract via `pytesseract`/Pillow.
+- **Utility set**: The earlier calculator, string transforms, dice/coin, etc., remain available so legacy prompts keep working.
+
 ## Adding a New Plugin
 1. Create a folder under `plugins/`, e.g. `plugins/weather/`.
 2. Add `function.py` with the callable you want to expose:

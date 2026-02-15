@@ -1,0 +1,27 @@
+{
+  "name": "http_post_json",
+  "description": "Send an HTTP POST request with a JSON body and return status, headers, and response text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Destination URL (must be HTTP or HTTPS)."
+      },
+      "payload": {
+        "type": "object",
+        "description": "JSON-serializable object to send in the request body."
+      },
+      "headers": {
+        "type": "object",
+        "description": "Optional additional headers to include."
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Seconds to wait before aborting the request (default 20)."
+      }
+    },
+    "required": ["url", "payload"]
+  },
+  "execution_function": "http_post_json"
+}

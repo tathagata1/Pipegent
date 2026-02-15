@@ -1,0 +1,27 @@
+{
+  "name": "table_parser",
+  "description": "Read CSV or XLSX files and return normalized row data.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "file_path": {
+        "type": "string",
+        "description": "Path to the CSV or Excel file inside the project."
+      },
+      "sheet_name": {
+        "type": "string",
+        "description": "For Excel files, the sheet to parse (defaults to the first sheet)."
+      },
+      "max_rows": {
+        "type": "integer",
+        "description": "Limit the number of rows returned (default 100)."
+      },
+      "has_header": {
+        "type": "boolean",
+        "description": "Treat the first row as column names (default true)."
+      }
+    },
+    "required": ["file_path"]
+  },
+  "execution_function": "table_parser"
+}
