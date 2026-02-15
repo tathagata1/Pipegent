@@ -1,0 +1,20 @@
+{
+  "name": "discount_calculator",
+  "description": "Calculate discount amount and new price.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "price": {
+        "type": "number"
+      },
+      "discount_percent": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "price",
+      "discount_percent"
+    ]
+  },
+  "execution_function": "discount_calculator"
+}

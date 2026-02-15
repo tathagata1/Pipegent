@@ -1,0 +1,24 @@
+{
+  "name": "simple_interest",
+  "description": "Compute simple interest given principal, rate, and time.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "principal": {
+        "type": "number"
+      },
+      "rate_percent": {
+        "type": "number"
+      },
+      "time_years": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "principal",
+      "rate_percent",
+      "time_years"
+    ]
+  },
+  "execution_function": "simple_interest"
+}

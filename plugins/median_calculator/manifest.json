@@ -1,0 +1,20 @@
+{
+  "name": "median_calculator",
+  "description": "Compute the median of a list of numbers.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "required": [
+      "numbers"
+    ]
+  },
+  "execution_function": "median_calculator"
+}

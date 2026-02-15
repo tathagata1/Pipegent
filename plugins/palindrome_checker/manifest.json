@@ -1,0 +1,16 @@
+{
+  "name": "palindrome_checker",
+  "description": "Determine if text is a palindrome (ignoring non-alphanumerics).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "palindrome_checker"
+}

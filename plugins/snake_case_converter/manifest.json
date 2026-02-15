@@ -1,0 +1,16 @@
+{
+  "name": "snake_case_converter",
+  "description": "Convert text into snake_case.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "snake_case_converter"
+}

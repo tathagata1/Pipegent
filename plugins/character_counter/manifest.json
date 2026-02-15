@@ -1,0 +1,16 @@
+{
+  "name": "character_counter",
+  "description": "Count the number of characters in text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "character_counter"
+}

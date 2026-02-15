@@ -1,0 +1,16 @@
+{
+  "name": "sentence_case",
+  "description": "Convert text to sentence case (first letter uppercase, rest lowercase).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "sentence_case"
+}

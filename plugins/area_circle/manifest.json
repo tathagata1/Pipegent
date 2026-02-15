@@ -1,0 +1,17 @@
+{
+  "name": "area_circle",
+  "description": "Calculate the area of a circle from its radius.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "radius": {
+        "type": "number",
+        "description": "Circle radius (non-negative)."
+      }
+    },
+    "required": [
+      "radius"
+    ]
+  },
+  "execution_function": "area_circle"
+}

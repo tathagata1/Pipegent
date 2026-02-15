@@ -1,0 +1,17 @@
+{
+  "name": "unique_values",
+  "description": "Return unique values from a list while preserving order.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {}
+      }
+    },
+    "required": [
+      "items"
+    ]
+  },
+  "execution_function": "unique_values"
+}

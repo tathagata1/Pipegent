@@ -1,0 +1,18 @@
+{
+  "name": "fibonacci_number",
+  "description": "Return the nth Fibonacci number (0-indexed).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 92
+      }
+    },
+    "required": [
+      "n"
+    ]
+  },
+  "execution_function": "fibonacci_number"
+}

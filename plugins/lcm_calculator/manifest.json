@@ -1,0 +1,20 @@
+{
+  "name": "lcm_calculator",
+  "description": "Compute least common multiple of two integers.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "a": {
+        "type": "integer"
+      },
+      "b": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "a",
+      "b"
+    ]
+  },
+  "execution_function": "lcm_calculator"
+}

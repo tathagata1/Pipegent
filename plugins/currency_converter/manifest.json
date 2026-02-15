@@ -1,0 +1,40 @@
+{
+  "name": "currency_converter",
+  "description": "Convert between USD, EUR, and GBP using static reference rates.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "amount": {
+        "type": "number"
+      },
+      "from_currency": {
+        "type": "string",
+        "enum": [
+          "USD",
+          "EUR",
+          "GBP",
+          "usd",
+          "eur",
+          "gbp"
+        ]
+      },
+      "to_currency": {
+        "type": "string",
+        "enum": [
+          "USD",
+          "EUR",
+          "GBP",
+          "usd",
+          "eur",
+          "gbp"
+        ]
+      }
+    },
+    "required": [
+      "amount",
+      "from_currency",
+      "to_currency"
+    ]
+  },
+  "execution_function": "currency_converter"
+}

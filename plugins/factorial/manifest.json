@@ -1,0 +1,18 @@
+{
+  "name": "factorial",
+  "description": "Compute factorial of a non-negative integer.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "n": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 1000
+      }
+    },
+    "required": [
+      "n"
+    ]
+  },
+  "execution_function": "factorial"
+}

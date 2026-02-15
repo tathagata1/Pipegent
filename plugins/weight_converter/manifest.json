@@ -1,0 +1,32 @@
+{
+  "name": "weight_converter",
+  "description": "Convert between kilograms and pounds.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": [
+          "kilograms",
+          "pounds"
+        ]
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": [
+          "kilograms",
+          "pounds"
+        ]
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "weight_converter"
+}

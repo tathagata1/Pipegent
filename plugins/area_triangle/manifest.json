@@ -1,0 +1,20 @@
+{
+  "name": "area_triangle",
+  "description": "Compute triangle area from base and height.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "base": {
+        "type": "number"
+      },
+      "height": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "base",
+      "height"
+    ]
+  },
+  "execution_function": "area_triangle"
+}

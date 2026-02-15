@@ -1,0 +1,32 @@
+{
+  "name": "speed_converter",
+  "description": "Convert speeds between km/h and mph.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": [
+          "kmh",
+          "mph"
+        ]
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": [
+          "kmh",
+          "mph"
+        ]
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "speed_converter"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "percentage_of_total",
+  "description": "Find what percentage a value is of a total.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "total": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "value",
+      "total"
+    ]
+  },
+  "execution_function": "percentage_of_total"
+}

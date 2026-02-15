@@ -1,0 +1,17 @@
+{
+  "name": "shuffle_list",
+  "description": "Return a shuffled copy of the provided list.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {}
+      }
+    },
+    "required": [
+      "items"
+    ]
+  },
+  "execution_function": "shuffle_list"
+}

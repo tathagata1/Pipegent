@@ -1,0 +1,22 @@
+{
+  "name": "list_merger",
+  "description": "Concatenate two lists.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "first": {
+        "type": "array",
+        "items": {}
+      },
+      "second": {
+        "type": "array",
+        "items": {}
+      }
+    },
+    "required": [
+      "first",
+      "second"
+    ]
+  },
+  "execution_function": "list_merger"
+}

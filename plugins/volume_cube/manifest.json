@@ -1,0 +1,17 @@
+{
+  "name": "volume_cube",
+  "description": "Calculate the volume of a cube from its side length.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "side": {
+        "type": "number",
+        "description": "Length of a side."
+      }
+    },
+    "required": [
+      "side"
+    ]
+  },
+  "execution_function": "volume_cube"
+}

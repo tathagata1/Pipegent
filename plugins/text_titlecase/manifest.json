@@ -1,0 +1,16 @@
+{
+  "name": "text_titlecase",
+  "description": "Convert text to title case.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "text_titlecase"
+}

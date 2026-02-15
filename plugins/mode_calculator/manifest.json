@@ -1,0 +1,20 @@
+{
+  "name": "mode_calculator",
+  "description": "Return the mode(s) of a list of numbers.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "required": [
+      "numbers"
+    ]
+  },
+  "execution_function": "mode_calculator"
+}

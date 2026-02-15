@@ -1,0 +1,26 @@
+{
+  "name": "percentile_calculator",
+  "description": "Interpolate the percentile value for a list of numbers.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number"
+        }
+      },
+      "percentile": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 100
+      }
+    },
+    "required": [
+      "numbers",
+      "percentile"
+    ]
+  },
+  "execution_function": "percentile_calculator"
+}

@@ -1,0 +1,32 @@
+{
+  "name": "fuel_efficiency_converter",
+  "description": "Convert between MPG and L/100km.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": [
+          "mpg",
+          "l_per_100km"
+        ]
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": [
+          "mpg",
+          "l_per_100km"
+        ]
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "fuel_efficiency_converter"
+}

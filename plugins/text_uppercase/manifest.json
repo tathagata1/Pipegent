@@ -1,0 +1,16 @@
+{
+  "name": "text_uppercase",
+  "description": "Convert text to uppercase.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "text_uppercase"
+}

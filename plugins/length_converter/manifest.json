@@ -1,0 +1,32 @@
+{
+  "name": "length_converter",
+  "description": "Convert between centimeters and inches.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "from_unit": {
+        "type": "string",
+        "enum": [
+          "centimeters",
+          "inches"
+        ]
+      },
+      "to_unit": {
+        "type": "string",
+        "enum": [
+          "centimeters",
+          "inches"
+        ]
+      }
+    },
+    "required": [
+      "value",
+      "from_unit",
+      "to_unit"
+    ]
+  },
+  "execution_function": "length_converter"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "z_score_calculator",
+  "description": "Compute the z-score of a value.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "number"
+      },
+      "mean": {
+        "type": "number"
+      },
+      "std_dev": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "value",
+      "mean",
+      "std_dev"
+    ]
+  },
+  "execution_function": "z_score_calculator"
+}

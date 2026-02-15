@@ -1,0 +1,20 @@
+{
+  "name": "substring_finder",
+  "description": "Find all positions where a substring appears in text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      },
+      "substring": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text",
+      "substring"
+    ]
+  },
+  "execution_function": "substring_finder"
+}

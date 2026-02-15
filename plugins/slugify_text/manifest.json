@@ -1,0 +1,16 @@
+{
+  "name": "slugify_text",
+  "description": "Convert text into a URL-friendly slug.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "slugify_text"
+}

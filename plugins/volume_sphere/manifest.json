@@ -1,0 +1,16 @@
+{
+  "name": "volume_sphere",
+  "description": "Calculate the volume of a sphere.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "radius": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "radius"
+    ]
+  },
+  "execution_function": "volume_sphere"
+}

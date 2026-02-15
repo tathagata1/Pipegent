@@ -1,0 +1,22 @@
+{
+  "name": "sort_numbers",
+  "description": "Sort a list of numbers ascending or descending.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "items": {
+          "type": "number"
+        }
+      },
+      "descending": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "numbers"
+    ]
+  },
+  "execution_function": "sort_numbers"
+}

@@ -1,0 +1,24 @@
+{
+  "name": "date_difference",
+  "description": "Return day difference between two dates (default YYYY-MM-DD).",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "start_date": {
+        "type": "string"
+      },
+      "end_date": {
+        "type": "string"
+      },
+      "fmt": {
+        "type": "string",
+        "description": "Optional datetime format pattern."
+      }
+    },
+    "required": [
+      "start_date",
+      "end_date"
+    ]
+  },
+  "execution_function": "date_difference"
+}

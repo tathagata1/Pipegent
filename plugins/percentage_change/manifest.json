@@ -1,0 +1,20 @@
+{
+  "name": "percentage_change",
+  "description": "Calculate the percentage change between two values.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "old_value": {
+        "type": "number"
+      },
+      "new_value": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "old_value",
+      "new_value"
+    ]
+  },
+  "execution_function": "percentage_change"
+}

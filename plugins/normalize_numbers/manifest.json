@@ -1,0 +1,20 @@
+{
+  "name": "normalize_numbers",
+  "description": "Scale numbers to the 0-1 range using min-max normalization.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "numbers": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "number"
+        }
+      }
+    },
+    "required": [
+      "numbers"
+    ]
+  },
+  "execution_function": "normalize_numbers"
+}

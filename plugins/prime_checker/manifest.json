@@ -1,0 +1,17 @@
+{
+  "name": "prime_checker",
+  "description": "Determine whether a number is prime.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "value": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "value"
+    ]
+  },
+  "execution_function": "prime_checker"
+}

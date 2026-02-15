@@ -1,0 +1,20 @@
+{
+  "name": "count_occurrences",
+  "description": "Count how many times a substring appears in text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      },
+      "substring": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text",
+      "substring"
+    ]
+  },
+  "execution_function": "count_occurrences"
+}

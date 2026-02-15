@@ -1,0 +1,29 @@
+{
+  "name": "compound_interest",
+  "description": "Compute compound interest final amount.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "principal": {
+        "type": "number"
+      },
+      "rate_percent": {
+        "type": "number"
+      },
+      "times_per_year": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "years": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "principal",
+      "rate_percent",
+      "times_per_year",
+      "years"
+    ]
+  },
+  "execution_function": "compound_interest"
+}

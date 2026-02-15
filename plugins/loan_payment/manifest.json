@@ -1,0 +1,24 @@
+{
+  "name": "loan_payment",
+  "description": "Calculate monthly payment, total payment, and interest for a loan.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "principal": {
+        "type": "number"
+      },
+      "annual_rate_percent": {
+        "type": "number"
+      },
+      "years": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "principal",
+      "annual_rate_percent",
+      "years"
+    ]
+  },
+  "execution_function": "loan_payment"
+}

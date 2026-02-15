@@ -105,10 +105,3 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 3. Add `manifest.json` describing the tool (see schema above) and set `"execution_function": "get_weather"`.
 4. Optionally add dependency installation/build steps to the README or a dedicated requirements file.
 5. Restart `python main.py` so the loader picks up the new plugin. If the manifest is invalid, the console will show a validation error.
-
-## Development Tips
-- Keep `function.py` side-effect free and avoid global state; the executor imports each plugin module at startup.
-- Use descriptive `description` text and include argument hints in `input_schema` to guide the LLM toward valid args.
-- `tempstore/` is ignored by git and managed automatically, but you can inspect its contents during a run for debugging.
-- To trace plugin loading issues, temporarily instrument `pipegent/services/plugin_loader.py` or run it directly to list which manifests pass validation.
-- If you change `system.config.ini` or `user.config.ini`, restart the agent so the new planner/executor settings take effect.

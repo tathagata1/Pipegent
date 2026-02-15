@@ -1,0 +1,20 @@
+{
+  "name": "volume_cylinder",
+  "description": "Calculate the volume of a cylinder.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "radius": {
+        "type": "number"
+      },
+      "height": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "radius",
+      "height"
+    ]
+  },
+  "execution_function": "volume_cylinder"
+}

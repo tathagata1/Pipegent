@@ -1,0 +1,16 @@
+{
+  "name": "consonant_counter",
+  "description": "Count consonants in text.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "consonant_counter"
+}

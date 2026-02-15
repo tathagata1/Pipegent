@@ -1,0 +1,20 @@
+{
+  "name": "area_rectangle",
+  "description": "Compute rectangle area from width and height.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "width": {
+        "type": "number"
+      },
+      "height": {
+        "type": "number"
+      }
+    },
+    "required": [
+      "width",
+      "height"
+    ]
+  },
+  "execution_function": "area_rectangle"
+}

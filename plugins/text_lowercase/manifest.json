@@ -1,0 +1,16 @@
+{
+  "name": "text_lowercase",
+  "description": "Convert text to lowercase.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "text_lowercase"
+}

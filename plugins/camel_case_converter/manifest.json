@@ -1,0 +1,16 @@
+{
+  "name": "camel_case_converter",
+  "description": "Convert text into camelCase.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "text": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "text"
+    ]
+  },
+  "execution_function": "camel_case_converter"
+}

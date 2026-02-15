@@ -1,0 +1,24 @@
+{
+  "name": "savings_goal_calculator",
+  "description": "Estimate months/years to reach a savings goal with monthly contributions.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "target_amount": {
+        "type": "number"
+      },
+      "monthly_contribution": {
+        "type": "number"
+      },
+      "annual_rate_percent": {
+        "type": "number",
+        "description": "Expected annual return (default 0)."
+      }
+    },
+    "required": [
+      "target_amount",
+      "monthly_contribution"
+    ]
+  },
+  "execution_function": "savings_goal_calculator"
+}
