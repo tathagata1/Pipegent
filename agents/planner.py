@@ -50,9 +50,11 @@ class PlannerAgent:
         self.temp_dir = temp_dir
         self.context_file = context_file
         self.context_history: List[Dict[str, str]] = []
+        self._context_file_mtime: Optional[float] = None
         self._load_context_history()
 
     def handle_request(self, user_request: str) -> str:
+        self._maybe_refresh_context_history()
         created_files: List[Path] = []
         final_response = ""
         step_results: List[Dict[str, Any]] = []
@@ -291,32 +293,42 @@ class PlannerAgent:
         self._persist_context_history()
 
     def _load_context_history(self) -> None:
-        if not self.context_file or not self.context_file.exists():
+        if not self.context_file:
             return
         try:
-            raw = json.loads(self.context_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            raw_text = self.context_file.read_text(encoding="utf-8")
+            mtime = self.context_file.stat().st_mtime
+        except FileNotFoundError:
+            self.context_history = []
+            self._context_file_mtime = None
+            return
+        except OSError:
             return
 
-        if not isinstance(raw, list):
+        try:
+            raw = json.loads(raw_text)
+        except json.JSONDecodeError:
+            self.context_history = []
+            self._context_file_mtime = mtime
             return
 
         cleaned: List[Dict[str, str]] = []
-        for entry in raw:
-            if (
-                isinstance(entry, dict)
-                and "role" in entry
-                and "content" in entry
-            ):
-                cleaned.append(
-                    {
-                        "role": str(entry["role"]),
-                        "content": str(entry["content"]),
-                    }
-                )
+        if isinstance(raw, list):
+            for entry in raw:
+                if (
+                    isinstance(entry, dict)
+                    and "role" in entry
+                    and "content" in entry
+                ):
+                    cleaned.append(
+                        {
+                            "role": str(entry["role"]),
+                            "content": str(entry["content"]),
+                        }
+                    )
 
-        if cleaned:
-            self.context_history = cleaned
+        self.context_history = cleaned
+        self._context_file_mtime = mtime
 
     def _persist_context_history(self) -> None:
         if not self.context_file:
@@ -327,5 +339,22 @@ class PlannerAgent:
                 json.dumps(self.context_history, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            self._context_file_mtime = self.context_file.stat().st_mtime
         except OSError:
             pass
+
+    def _maybe_refresh_context_history(self) -> None:
+        if not self.context_file:
+            return
+        try:
+            current_mtime = self.context_file.stat().st_mtime
+        except FileNotFoundError:
+            if self.context_history:
+                self.context_history = []
+            self._context_file_mtime = None
+            return
+        except OSError:
+            return
+
+        if self._context_file_mtime is None or current_mtime > self._context_file_mtime:
+            self._load_context_history()

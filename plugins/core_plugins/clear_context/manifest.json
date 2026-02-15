@@ -1,0 +1,15 @@
+{
+  "name": "clear_context",
+  "description": "Delete the current context history file and create a blank replacement.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "reason": {
+        "type": "string",
+        "description": "Optional note about why the context should be cleared."
+      }
+    },
+    "required": []
+  },
+  "execution_function": "clear_context"
+}

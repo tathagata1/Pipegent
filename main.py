@@ -2,6 +2,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Tuple
 
 from openai import OpenAI
 
@@ -22,8 +23,12 @@ def create_agent() -> PlannerAgent:
     os.environ["OPENAI_API_KEY"] = chatgpt_key
     client = OpenAI()
 
-    plugins_dir = Path(__file__).parent / "plugins"
-    tools, tool_specs = load_plugins(plugins_dir)
+    base_plugins_dir = Path(__file__).parent / "plugins"
+    plugin_dirs = [
+        base_plugins_dir / "core_plugins",
+        base_plugins_dir / "user_plugins",
+    ]
+    tools, tool_specs = _load_all_plugins(plugin_dirs)
     if not tools:
         raise RuntimeError("No plugins were loaded. Ensure manifest.json files are valid.")
 
@@ -39,6 +44,7 @@ def create_agent() -> PlannerAgent:
     temp_dir = Path(__file__).parent / "tempstore"
     prepare_temp_dir(temp_dir)
     context_file = initialize_context_file(temp_dir)
+    os.environ["PIPEGENT_CONTEXT_FILE"] = str(context_file)
 
     return PlannerAgent(
         client=client,
@@ -69,6 +75,19 @@ def initialize_context_file(temp_dir: Path) -> Path:
     context_file = temp_dir / f"context_history_{run_id}.json"
     context_file.write_text("[]", encoding="utf-8")
     return context_file
+
+
+def _load_all_plugins(plugin_dirs: List[Path]) -> Tuple[Dict[str, Callable[..., Any]], List[Dict[str, Any]]]:
+    aggregated_tools: Dict[str, Callable[..., Any]] = {}
+    aggregated_specs: List[Dict[str, Any]] = []
+    for directory in plugin_dirs:
+        dir_tools, dir_specs = load_plugins(directory)
+        for name, func in dir_tools.items():
+            if name in aggregated_tools:
+                raise RuntimeError(f"Duplicate plugin name detected: {name}")
+            aggregated_tools[name] = func
+        aggregated_specs.extend(dir_specs)
+    return aggregated_tools, aggregated_specs
 
 
 def main() -> None:
