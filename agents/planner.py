@@ -1,7 +1,7 @@
 import json
 import secrets
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
@@ -39,6 +39,7 @@ class PlannerAgent:
         planner_temperature: float,
         max_steps: int,
         temp_dir: Path,
+        context_file: Optional[Path] = None,
     ) -> None:
         self.client = client
         self.executor = executor
@@ -47,7 +48,9 @@ class PlannerAgent:
         self.planner_temperature = planner_temperature
         self.max_steps = max(1, max_steps)
         self.temp_dir = temp_dir
+        self.context_file = context_file
         self.context_history: List[Dict[str, str]] = []
+        self._load_context_history()
 
     def handle_request(self, user_request: str) -> str:
         created_files: List[Path] = []
@@ -285,3 +288,44 @@ class PlannerAgent:
                 ),
             }
         )
+        self._persist_context_history()
+
+    def _load_context_history(self) -> None:
+        if not self.context_file or not self.context_file.exists():
+            return
+        try:
+            raw = json.loads(self.context_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+
+        if not isinstance(raw, list):
+            return
+
+        cleaned: List[Dict[str, str]] = []
+        for entry in raw:
+            if (
+                isinstance(entry, dict)
+                and "role" in entry
+                and "content" in entry
+            ):
+                cleaned.append(
+                    {
+                        "role": str(entry["role"]),
+                        "content": str(entry["content"]),
+                    }
+                )
+
+        if cleaned:
+            self.context_history = cleaned
+
+    def _persist_context_history(self) -> None:
+        if not self.context_file:
+            return
+        try:
+            self.context_file.parent.mkdir(parents=True, exist_ok=True)
+            self.context_file.write_text(
+                json.dumps(self.context_history, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass

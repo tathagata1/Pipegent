@@ -1,5 +1,6 @@
-﻿import os
+import os
 import shutil
+import uuid
 from pathlib import Path
 
 from openai import OpenAI
@@ -37,6 +38,7 @@ def create_agent() -> PlannerAgent:
 
     temp_dir = Path(__file__).parent / "tempstore"
     prepare_temp_dir(temp_dir)
+    context_file = initialize_context_file(temp_dir)
 
     return PlannerAgent(
         client=client,
@@ -46,8 +48,8 @@ def create_agent() -> PlannerAgent:
         planner_temperature=planner_temperature,
         max_steps=max_steps,
         temp_dir=temp_dir,
+        context_file=context_file,
     )
-
 
 
 def prepare_temp_dir(temp_dir: Path) -> None:
@@ -57,6 +59,16 @@ def prepare_temp_dir(temp_dir: Path) -> None:
             item.unlink()
         elif item.is_dir():
             shutil.rmtree(item)
+
+
+def initialize_context_file(temp_dir: Path) -> Path:
+    for existing in temp_dir.glob("context_history*.json"):
+        existing.unlink(missing_ok=True)
+
+    run_id = uuid.uuid4().hex
+    context_file = temp_dir / f"context_history_{run_id}.json"
+    context_file.write_text("[]", encoding="utf-8")
+    return context_file
 
 
 def main() -> None:
