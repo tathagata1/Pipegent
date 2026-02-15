@@ -1,0 +1,29 @@
+{
+  "name": "powershell_executor",
+  "description": "Execute PowerShell commands on the host system and return stdout, stderr, and exit code. Supports piping large content via stdin_data to avoid quoting limits.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "The PowerShell command to run. Avoid interactive prompts."
+      },
+      "stdin_data": {
+        "type": "string",
+        "description": "Optional text to send to the command's standard input. Use this for large or multi-line payloads and read it inside PowerShell via $input or [Console]::In."
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Seconds to wait before forcefully stopping the command. Defaults to 60."
+      },
+      "working_directory": {
+        "type": "string",
+        "description": "Optional directory path where the command should run."
+      }
+    },
+    "required": [
+      "command"
+    ]
+  },
+  "execution_function": "powershell_executor"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "web_scraper",
+  "description": "Download the contents of any HTTP(S) URL so the agent can quote or analyze the response body.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The HTTP or HTTPS URL to fetch."
+      },
+      "timeout": {
+        "type": "number",
+        "description": "Seconds to wait for the request before giving up. Defaults to 20."
+      },
+      "max_bytes": {
+        "type": "integer",
+        "description": "Maximum number of bytes to read from the response body. Defaults to 200000."
+      },
+      "user_agent": {
+        "type": "string",
+        "description": "Optional custom User-Agent header."
+      }
+    },
+    "required": [
+      "url"
+    ]
+  },
+  "execution_function": "web_scraper"
+}
