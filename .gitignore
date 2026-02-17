@@ -4,3 +4,4 @@ system.config.ini
 __pycache__/
 tempstore/*
 logs/
+user_files/

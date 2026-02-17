@@ -1,21 +1,6 @@
-from pathlib import Path
 from typing import Any, Dict, List
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _resolve_docx(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    if path.suffix.lower() != ".docx":
-        raise ValueError("docx_reader only supports .docx files.")
-    if not path.exists():
-        raise FileNotFoundError(f"DOCX file not found: {path}")
-    return path
+from services.path_utils import resolve_user_file
 
 
 def docx_reader(file_path: str, include_tables: bool = False) -> Dict[str, Any]:
@@ -24,7 +9,7 @@ def docx_reader(file_path: str, include_tables: bool = False) -> Dict[str, Any]:
     except ImportError as exc:
         raise ImportError("docx_reader requires the 'python-docx' package.") from exc
 
-    doc_path = _resolve_docx(file_path)
+    doc_path = resolve_user_file(file_path, expected_extensions=(".docx",))
     document = Document(doc_path)
 
     paragraphs = [p.text.strip() for p in document.paragraphs if p.text and p.text.strip()]

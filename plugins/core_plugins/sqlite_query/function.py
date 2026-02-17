@@ -1,23 +1,9 @@
 import sqlite3
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from services.path_utils import resolve_user_file
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MAX_ROWS = 50
-
-
-def _resolve_db(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    try:
-        path.relative_to(PROJECT_ROOT)
-    except ValueError as exc:
-        raise ValueError(f"Database path '{path}' is outside the project root.") from exc
-    return path
 
 
 def sqlite_query(
@@ -26,7 +12,7 @@ def sqlite_query(
     parameters: Optional[List[Any]] = None,
     max_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
-    database = _resolve_db(db_path)
+    database = resolve_user_file(db_path)
     if not database.exists():
         raise FileNotFoundError(f"Database file not found: {database}")
 

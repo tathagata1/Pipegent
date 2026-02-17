@@ -1,21 +1,6 @@
-from pathlib import Path
 from typing import Any, Dict, List
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _resolve(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    if path.suffix.lower() != ".pptx":
-        raise ValueError("pptx_reader only supports .pptx files.")
-    if not path.exists():
-        raise FileNotFoundError(f"PPTX file not found: {path}")
-    return path
+from services.path_utils import resolve_user_file
 
 
 def pptx_reader(
@@ -30,7 +15,7 @@ def pptx_reader(
     except ImportError as exc:
         raise ImportError("pptx_reader requires the 'python-pptx' package.") from exc
 
-    path = _resolve(file_path)
+    path = resolve_user_file(file_path, expected_extensions=(".pptx",))
     presentation = Presentation(path)
 
     slides: List[Dict[str, Any]] = []

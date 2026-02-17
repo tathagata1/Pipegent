@@ -1,21 +1,6 @@
-from pathlib import Path
 from typing import Dict, Optional
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-
-
-def _resolve(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    try:
-        path.relative_to(PROJECT_ROOT)
-    except ValueError as exc:
-        raise ValueError(f"Image path '{path}' is outside the project root.") from exc
-    return path
+from services.path_utils import resolve_user_file
 
 
 def image_ocr(
@@ -23,9 +8,10 @@ def image_ocr(
     language: Optional[str] = "eng",
     tesseract_cmd: Optional[str] = None,
 ) -> Dict[str, str]:
-    path = _resolve(image_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Image not found: {path}")
+    path = resolve_user_file(
+        image_path,
+        expected_extensions=(".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff", ".pdf"),
+    )
 
     try:
         import pytesseract

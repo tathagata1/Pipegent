@@ -2,22 +2,10 @@ import csv
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from services.path_utils import resolve_user_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_MAX_ROWS = 100
-
-
-def _resolve(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    try:
-        path.relative_to(PROJECT_ROOT)
-    except ValueError as exc:
-        raise ValueError(f"File '{path}' is outside the project root.") from exc
-    return path
 
 
 def _normalize_rows(raw_rows: List[List[Any]], has_header: bool) -> Dict[str, Any]:
@@ -78,7 +66,9 @@ def table_parser(
     max_rows: Optional[int] = None,
     has_header: bool = True,
 ) -> Dict[str, Any]:
-    path = _resolve(file_path)
+    path = resolve_user_file(
+        file_path, expected_extensions=(".csv", ".xlsx", ".xlsm")
+    )
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     limit = DEFAULT_MAX_ROWS if max_rows is None else max(1, max_rows)

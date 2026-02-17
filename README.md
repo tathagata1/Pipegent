@@ -29,6 +29,7 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 |-- plugins/
 |   |-- core_plugins/        # First-party tools shipped with Pipegent
 |   `-- user_plugins/        # Space for custom/community tools
+|-- user_files/              # Drop user-provided docs/images/etc. (git-ignored)
 |-- tempstore/               # Ephemeral files (auto-cleaned per run)
 |-- logs/                    # Structured execution logs (git-ignored)
 `-- requirements.txt         # Python dependencies (OpenAI SDK + optional extras)
@@ -108,6 +109,10 @@ Pipegent now ships with a broad starter suite so most automation tasks can be ha
 ## Logging & Telemetry
 - Every run generates `logs/pipegent_<timestamp>.log` with INFO-level summaries and DEBUG traces of planner/executor/tool activity. Console output stays minimal (`You:`, `thinking...`, `Agent:`) to emphasize the user dialogue.
 - `tempstore/` continues to hold intermediate artifacts across steps; filenames are referenced inside logs for easier troubleshooting.
+
+## Working with User Files
+- Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.
+- Outputs you plan to keep long-term can be written anywhere, but for inputs, keeping them in `user_files/` avoids permission issues and keeps everything under version control (the directory is ignored by git by default).
 
 ## Adding a New Plugin
 1. Create a folder under `plugins/`, e.g. `plugins/weather/`.

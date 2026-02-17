@@ -1,26 +1,8 @@
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from services.path_utils import resolve_user_file
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_LIMIT = 200
-
-
-def _resolve(path_str: str) -> Path:
-    path = Path(path_str).expanduser()
-    if not path.is_absolute():
-        path = (PROJECT_ROOT / path).resolve()
-    else:
-        path = path.resolve()
-    try:
-        path.relative_to(PROJECT_ROOT)
-    except ValueError as exc:
-        raise ValueError(f"File '{path}' is outside the project root.") from exc
-    if path.suffix.lower() != ".xls":
-        raise ValueError("xls_reader only handles .xls files.")
-    if not path.exists():
-        raise FileNotFoundError(f"XLS file not found: {path}")
-    return path
 
 
 def xls_reader(
@@ -34,7 +16,7 @@ def xls_reader(
     except ImportError as exc:
         raise ImportError("xls_reader requires the 'xlrd' package.") from exc
 
-    path = _resolve(file_path)
+    path = resolve_user_file(file_path, expected_extensions=(".xls",))
     workbook = xlrd.open_workbook(path)
     worksheet = workbook.sheet_by_name(sheet_name) if sheet_name else workbook.sheet_by_index(0)
 
