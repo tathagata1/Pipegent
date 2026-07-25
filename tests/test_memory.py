@@ -188,6 +188,43 @@ class MemoryTests(unittest.TestCase):
             IndexState.PENDING,
         )
 
+    def test_duplicate_retry_repairs_pending_vector_and_interrupted_operation(self):
+        failing = MemoryService(
+            self.repository, self.embeddings,
+            FailingVectorStore(self.embeddings.dimensions),
+            reconcile_on_startup=False,
+        )
+        candidate = self.candidate("interrupted durable fact")
+        first = failing.execute(self.request(
+            MemoryAction.CREATE, memory=candidate,
+            explicit_user_request=True, idempotency_key="interrupted-key",
+        ))
+        self.assertEqual(first.status, "partial_success")
+
+        # Simulate the pre-fix interruption state: no cached result for the
+        # idempotency key even though canonical storage succeeded.
+        with self.repository._connection:
+            self.repository._connection.execute(
+                "UPDATE memory_operations SET status='started',result_json=NULL "
+                "WHERE idempotency_key='interrupted-key'"
+            )
+        repaired_service = MemoryService(
+            self.repository, self.embeddings, self.vectors,
+            reconcile_on_startup=False,
+        )
+        retry = self.request(
+            MemoryAction.CREATE, memory=candidate,
+            explicit_user_request=True, idempotency_key="interrupted-key",
+        )
+        repaired = repaired_service.execute(retry)
+        self.assertEqual(repaired.status, "success")
+        self.assertTrue(repaired.evidence[0]["indexed"])
+        self.assertEqual(
+            self.repository.get(first.created_memory_id).index_state,
+            IndexState.INDEXED,
+        )
+        self.assertIn(first.created_memory_id, self.vectors.records)
+
     def test_document_ingestion_is_idempotent_and_removable(self):
         path = Path(self.temp.name) / "guide.md"
         path.write_text("# Guide\n" + "Do the safe thing. " * 100, encoding="utf-8")

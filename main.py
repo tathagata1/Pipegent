@@ -166,8 +166,9 @@ def main() -> None:
     while True:
         try:
             user_input = input("\nYou: ")
-        except EOFError:
-            logger.info("EOF received, shutting down Pipegent.")
+        except (EOFError, KeyboardInterrupt):
+            logger.info("Console interrupt received, shutting down Pipegent.")
+            print("\nShutting down Pipegent.")
             break
 
         if user_input.strip().lower() in {"exit", "quit"}:

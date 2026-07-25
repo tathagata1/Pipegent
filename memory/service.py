@@ -28,6 +28,7 @@ class MemoryService:
         vector_store: VectorStore, policy: Optional[MemoryPolicyEngine] = None,
         retriever: Optional[MemoryRetriever] = None,
         context_builder: Optional[RetrievalContextBuilder] = None,
+        reconcile_on_startup: bool = True,
     ) -> None:
         self.repository, self.embeddings, self.vector_store = (
             repository, embeddings, vector_store
@@ -38,6 +39,8 @@ class MemoryService:
         )
         self.context_builder = context_builder or RetrievalContextBuilder()
         self.vector_store.initialise()
+        if reconcile_on_startup:
+            self._reconcile_pending()
 
     def execute(self, request: MemoryOperationRequest) -> MemoryOperationResult:
         cached = self.repository.begin_operation(
@@ -119,10 +122,28 @@ class MemoryService:
             existing_conflicts=duplicates,
         ))
         if duplicates:
+            duplicate = duplicates[0]
+            if (
+                duplicate.index_state != IndexState.INDEXED
+                or duplicate.embedding_model != self.embeddings.model_name
+            ):
+                indexed, warning = self._index_record(duplicate)
+                return MemoryOperationResult(
+                    request.operation_id, request.action,
+                    "success" if indexed else "partial_success",
+                    records=[duplicate], created_memory_id=duplicate.id,
+                    evidence=[{
+                        "type": "duplicate_reconciled",
+                        "memory_id": duplicate.id, "persisted": True,
+                        "indexed": indexed,
+                    }],
+                    warnings=[] if indexed else [warning],
+                )
             return MemoryOperationResult(
                 request.operation_id, request.action, "success",
-                records=[duplicates[0]], created_memory_id=duplicates[0].id,
-                evidence=[{"type": "duplicate", "memory_id": duplicates[0].id}],
+                records=[duplicate], created_memory_id=duplicate.id,
+                evidence=[{"type": "duplicate", "memory_id": duplicate.id,
+                           "persisted": True, "indexed": True}],
             )
         if decision.decision != MemoryDecision.STORE or decision.normalised_candidate is None:
             return MemoryOperationResult(
@@ -156,24 +177,14 @@ class MemoryService:
             metadata=candidate.metadata, created_at=now, updated_at=now,
         )
         self.repository.save(record)
-        try:
-            vector = self.embeddings.embed_query(record.searchable_text)
-            self.vector_store.upsert([
-                VectorRecord(record.id, vector, record.vector_payload())
-            ])
-            record.index_state = IndexState.INDEXED
-            self.repository.save(record, "index_complete")
+        indexed, warning = self._index_record(record)
+        if indexed:
             status, warnings = "success", []
-        except Exception as exc:
-            record.index_state = IndexState.PENDING
-            record.metadata["last_index_error"] = type(exc).__name__
-            self.repository.save(record, "index_pending")
-            status, warnings = "partial_success", [
-                "Canonical memory was saved, but vector indexing is pending."
-            ]
+        else:
+            status, warnings = "partial_success", [warning]
             logger.warning(
-                "memory_index_pending operation_id=%s memory_id=%s error=%s",
-                request.operation_id, record.id, type(exc).__name__,
+                "memory_index_pending operation_id=%s memory_id=%s",
+                request.operation_id, record.id,
             )
         return MemoryOperationResult(
             request.operation_id, request.action, status, records=[record],
@@ -182,6 +193,35 @@ class MemoryService:
                        "persisted": True, "indexed": record.index_state == IndexState.INDEXED}],
             warnings=warnings,
         )
+
+    def _index_record(self, record: MemoryRecord) -> tuple[bool, str]:
+        try:
+            vector = self.embeddings.embed_query(record.searchable_text)
+            record.embedding_model = self.embeddings.model_name
+            self.vector_store.upsert([
+                VectorRecord(record.id, vector, record.vector_payload())
+            ])
+            record.index_state = IndexState.INDEXED
+            record.metadata.pop("last_index_error", None)
+            self.repository.save(record, "index_complete")
+            return True, ""
+        except Exception as exc:
+            record.index_state = IndexState.PENDING
+            record.metadata["last_index_error"] = type(exc).__name__
+            self.repository.save(record, "index_pending")
+            return (
+                False,
+                "Canonical memory was saved, but vector indexing is pending.",
+            )
+
+    def _reconcile_pending(self) -> None:
+        """Repair canonical records left pending by interruption or dependency failure."""
+        for record in self.repository.list_pending_index(self.embeddings.model_name):
+            indexed, _ = self._index_record(record)
+            logger.info(
+                "memory_startup_reconcile memory_id=%s indexed=%s",
+                record.id, indexed,
+            )
 
     def _search(self, request: MemoryOperationRequest) -> MemoryOperationResult:
         if not request.query:

@@ -152,6 +152,14 @@ class MemoryRepository:
             if " ".join(item.content.casefold().split()) == needle
         ]
 
+    def list_pending_index(self, embedding_model: str) -> List[MemoryRecord]:
+        rows = self._connection.execute(
+            "SELECT * FROM memories WHERE status=? AND "
+            "(index_state!=? OR embedding_model IS NULL OR embedding_model!=?)",
+            (MemoryStatus.ACTIVE.value, IndexState.INDEXED.value, embedding_model),
+        ).fetchall()
+        return [self._deserialize(row) for row in rows]
+
     def mark_deleted(self, record: MemoryRecord) -> None:
         record.status = MemoryStatus.DELETED
         record.index_state = IndexState.NOT_REQUIRED
@@ -218,11 +226,23 @@ class MemoryRepository:
     ) -> Optional[Dict[str, Any]]:
         if idempotency_key:
             row = self._connection.execute(
-                "SELECT result_json FROM memory_operations WHERE idempotency_key=?",
+                "SELECT operation_id,result_json FROM memory_operations "
+                "WHERE idempotency_key=?",
                 (idempotency_key,),
             ).fetchone()
-            if row and row[0]:
-                return json.loads(row[0])
+            if row and row["result_json"]:
+                return json.loads(row["result_json"])
+            if row:
+                # A process interruption may leave an operation permanently in
+                # "started". Transfer the stable key to this retry so its result
+                # can be completed and cached normally.
+                with self._connection:
+                    self._connection.execute(
+                        "UPDATE memory_operations SET operation_id=?,status=? "
+                        "WHERE idempotency_key=?",
+                        (operation_id, "restarted", idempotency_key),
+                    )
+                return None
         with self._connection:
             self._connection.execute(
                 "INSERT OR IGNORE INTO memory_operations VALUES(?,?,?,?,?,?,?,?)",

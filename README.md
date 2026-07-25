@@ -1,13 +1,29 @@
 # Pipegent
 
 Pipegent supports self-hosted long-term memory and knowledge-base RAG using canonical
-SQLite persistence, local Sentence Transformers embeddings, and Qdrant. See
-[docs/MEMORY.md](docs/MEMORY.md) for architecture, privacy controls, setup, testing, and
-reindexing guidance.
+SQLite persistence, local Sentence Transformers embeddings, and Qdrant.
 
 Pipegent is an open-source, tool-first AI agent that routes every user request through explicit tools. The agent core stays minimal while real capabilities come from plugins that you can create, configure, and share. This repository bundles the runtime, a manifest-based plugin loader, and a handful of starter plugins (calculator, coin flip, date/time, dice rolling, jokes, and speech output).
 
-> **Before you run Pipegent:** install all dependencies with `pip install -r requirements.txt`.
+## Getting Started
+
+Create the local application configuration:
+
+```powershell
+Copy-Item config\example.config.ini config\config.ini
+```
+
+Add your OpenAI API key to `config/config.ini`, then install the dependencies, start the
+local Qdrant service, and launch Pipegent:
+
+```powershell
+python -m pip install -r requirements.txt
+docker compose up -d qdrant
+python main.py
+```
+
+The first run downloads the local Sentence Transformers embedding model. Qdrant data persists
+in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegent prompt.
 
 ## Features
 - **Plugin-first design** – every capability lives in `plugins/<name>/function.py` and exposes its API via `manifest.json`.
@@ -50,7 +66,7 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 `-- requirements.txt         # Python dependencies (OpenAI SDK + optional extras)
 ```
 
-## Setup
+## Detailed Setup
 1. **Clone the repo** (or download it) and install dependencies:
    ```bash
    git clone <repo-url>
@@ -162,3 +178,135 @@ Pipegent now ships with a broad starter suite so most automation tasks can be ha
 3. Add `manifest.json` describing the tool (see schema above) and set `"execution_function": "get_weather"`.
 4. Optionally add dependency installation/build steps to the README or a dedicated requirements file.
 5. Restart `python main.py` so the loader picks up the new plugin. If the manifest is invalid, the console will show a validation error.
+
+## Long-Term Memory and Knowledge-Base RAG
+
+### Architecture
+
+Pipegent retains its existing Planner-to-Executor workflow and JSON workflow repository.
+Memory is a separate subsystem:
+
+`Planner -> MemoryOperationRequest -> Executor -> MemoryService`
+
+`MemoryService` applies deterministic policy, writes canonical SQLite data, embeds text, and
+indexes it through the replaceable `VectorStore` interface. `MemoryRetriever` performs
+metadata-filtered semantic search, loads canonical records, rejects inactive, expired, or
+out-of-scope records, and ranks results using configurable semantic, importance, confidence,
+recency, and lexical scores. `RetrievalContextBuilder` produces bounded reference context for
+the Planner.
+
+Canonical and vector storage are separate because the vector index is replaceable and can be
+rebuilt. SQLite preserves canonical text, ownership, provenance, revisions, operations, user
+settings, document metadata, audit events, validity, supersession links, and indexing state.
+If embedding or Qdrant fails, the canonical record remains in a recoverable `pending` state
+for reindexing.
+
+The primary abstraction boundaries are `EmbeddingProvider`, `VectorStore`, and
+`MemoryRepository`. This allows Qdrant or Sentence Transformers to be replaced by pgvector,
+Chroma, FAISS, another local model, a remote embedding service, or another relational store
+without changing the agent layer.
+
+### Embeddings and Qdrant
+
+The default embedding model is `sentence-transformers/all-MiniLM-L6-v2`:
+
+- 384 vector dimensions
+- Normalized embeddings
+- Cosine distance
+- CPU execution by default
+
+The Qdrant collection defaults to `agent_memory_v1`. Vector payloads contain the memory ID,
+tenant, user, agent, session and project ownership, scope, type, source, status, tags,
+sensitivity, creation time, and validity dates. Every search includes tenant filtering and
+the applicable user, session, project, and agent filters.
+
+The local stack pins Qdrant Server `1.15.1` and `qdrant-client` `1.16.2`; their minor-version
+difference is within Qdrant's supported compatibility range.
+
+Memory scopes are `user`, `session`, `project`, `agent`, `organisation`, and
+`knowledge_base`. Memory types include user facts and preferences, project facts, decisions,
+task outcomes, procedures, observations, corrections, and document chunks. Imported document
+chunks always use the knowledge-base scope and imported-document source, keeping them
+separate from interaction memory.
+
+### Memory Workflows and User Controls
+
+Explicit `remember`, `save`, or `learn` requests become structured Executor operations. The
+policy rejects secret-like content, canonical storage runs first, and success is confirmed
+only after persistence evidence is returned. Exact duplicates reuse the existing record.
+Corrections create linked revisions and supersede the previous fact instead of erasing audit
+history. Temporary constraints use validity dates and session or project scope.
+
+Automatic storage is disabled by default. Agent-proposed candidates remain source-classified;
+low-confidence, inferred, or sensitive information is ignored or requires confirmation.
+Passwords, API keys, access tokens, cookies, authentication headers, private keys, one-time
+passwords, security codes, hidden prompts, and private reasoning are rejected.
+
+Relevant memories are retrieved before planning. Retrieved text is delimited as untrusted
+reference data: it cannot override the current user message, provide system instructions, or
+cause commands to execute. Ownership, status, scope, validity, and freshness are checked
+against canonical records.
+
+Memory operations support listing, searching, correcting, deleting, exporting, reindexing,
+and consolidation. Users can disable automatic storage, disable retrieval, disable all memory,
+or disable memory for the current conversation. Removing an ingested document marks its
+canonical chunks deleted, removes their vectors, deletes the document registry entry, and
+records audit events.
+
+### Memory Setup
+
+Install dependencies and start Qdrant:
+
+```powershell
+python -m pip install -r requirements.txt
+docker compose up -d qdrant
+Copy-Item .env.example .env
+python main.py
+```
+
+Sentence Transformers downloads the model into its normal local cache on first use and
+reuses one loaded model instance. To prefetch it:
+
+```powershell
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+```
+
+Memory configuration is environment based:
+
+- `MEMORY_ENABLED`, default `true`
+- `MEMORY_AUTO_STORE_ENABLED`, default `false`
+- `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION_PREFIX`
+- `EMBEDDING_MODEL`, `EMBEDDING_DEVICE`, `EMBEDDING_BATCH_SIZE`
+- `MEMORY_DEFAULT_TOP_K`, `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_MIN_SIMILARITY`
+- `MEMORY_AUTO_STORE_CONFIDENCE`, `MEMORY_AUTO_STORE_IMPORTANCE`
+
+Do not commit credentials. Canonical memory is stored at `data/memory.sqlite3`; Qdrant stores
+its index in the Docker volume declared by `docker-compose.yml`. Organisation-wide scope
+should only be enabled after connecting the deployment's identity and role provider.
+
+### Memory Testing and Evaluation
+
+```powershell
+python -m pytest -q
+python evaluation/evaluate_memory.py
+```
+
+Unit tests use deterministic local embeddings and an in-memory vector store. Qdrant
+integration tests require the Compose service and are enabled with:
+
+```powershell
+$env:RUN_QDRANT_INTEGRATION = "1"
+python -m pytest tests/test_qdrant_integration.py -q
+```
+
+The evaluation dataset reports precision at K, recall at K, mean reciprocal rank,
+tenant-isolation failures, expired-memory retrieval failures, and conflict-resolution
+failures.
+
+Current limitations:
+
+- Lexical ranking is performed in process rather than through SQLite FTS.
+- Organisation authorization needs the host product's identity and role provider.
+- Automatic candidate-extraction prompts are available, but automatic storage remains
+  intentionally disabled by default.
+- Memory telemetry currently uses structured logs rather than a Prometheus exporter.
