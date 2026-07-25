@@ -1,5 +1,4 @@
-user.config.ini
-system.config.ini
+config.ini
 *.pyc
 __pycache__/
 tempstore/*

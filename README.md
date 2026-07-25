@@ -10,15 +10,15 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - **Two-tier planning/execution** – a planner LLM decomposes requests into bounded steps and a dedicated executor LLM completes each step with the available tools, honoring `AGENT.max_steps` to avoid infinite loops.
 - **Ephemeral tempstore** – step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
 - **Structured logging** – every run writes a time-stamped file under `logs/`, while the console stays minimal (`You:`, `thinking...`, `Agent:`). Logs capture planner/executor interactions, plugin-loading diagnostics, and failure traces without cluttering the terminal.
-- **Config-driven OpenAI clients** – `system.config.ini` holds shared defaults while `user.config.ini` keeps developer-specific secrets such as API keys.
+- **Config-driven OpenAI clients** – `config.ini` contains the OpenAI credentials and planner/executor settings in one place.
 
 ## Repository Structure
 ```
 .
 |-- main.py                  # CLI entry point + logging bootstrap + REPL loop
-|-- config.py                # Configuration helper that merges system + user config layers
-|-- system.config.ini        # Repository defaults (models, temps, max steps)
-|-- user.config.ini          # Developer secrets and overrides (OpenAI key, etc.)
+|-- config.py                # Loads settings from config.ini
+|-- example.config.ini       # Safe configuration template
+|-- config.ini               # Local configuration and secrets (git-ignored)
 |-- agents/
 |   |-- planner.py           # Planner agent orchestration logic (+context persistence)
 |   `-- tool_executor.py     # Executor that routes to plugins
@@ -45,19 +45,21 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
    pip install -r requirements.txt
    ```
 2. **Configure credentials**:
-   - Copy `example.copy.ini` to `system.config.ini` if you need a fresh baseline (or edit the existing file) to define default planner/executor settings.
-   - Create `user.config.ini` (git-ignored) for secrets and overrides, then set your OpenAI key plus any personal tweaks:
+   - Copy `example.config.ini` to `config.ini`, then set your OpenAI key and adjust the model settings if needed:
+   ```bash
+   copy example.config.ini config.ini
+   ```
    ```ini
    [OPENAI]
    chatgpt_key = sk-...
 
    [PLANNER_LLM]
    model = gpt-4o-mini
-   temperature = 0.2
+   temperature = 1
 
    [EXECUTER_LLM]
    model = gpt-4o-mini
-   temperature = 0.0
+   temperature = 1
 
    [AGENT]
    max_steps = 5

@@ -189,9 +189,16 @@ class PlannerAgent:
         else:
             previous = "None yet."
 
+        recent_context = (
+            json.dumps(self.context_history[-4:], ensure_ascii=False)
+            if self.context_history
+            else "None."
+        )
+
         return (
             f"Original request:\n{user_request}\n\n"
             f"You are executing plan step #{index}: {step}.\n"
+            f"Recent conversation context:\n{recent_context}\n\n"
             f"Previous step outputs:\n{previous}\n\n"
             "Use the available tools to accomplish this step. Execute it exactly once - do not loop or batch. "
             "Keep tool arguments singular (for example, leave roll_dice 'rolls' at 1 unless this step explicitly says otherwise)."
