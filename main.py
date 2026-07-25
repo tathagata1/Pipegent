@@ -15,10 +15,20 @@ from config import (
     max_steps,
     planner_model,
     planner_temperature,
+    memory_enabled, qdrant_api_key, qdrant_collection_prefix, qdrant_url,
+    embedding_model, embedding_device, embedding_batch_size,
+    memory_max_context_items, memory_min_similarity, memory_auto_store_enabled,
 )
 from agents import PlannerAgent, ToolExecutor
 from prompts import build_system_prompt
 from services import JsonPlanRepository, load_plugins
+from memory.embeddings import SentenceTransformerEmbeddingProvider
+from memory.repository import MemoryRepository
+from memory.retrieval import MemoryRetriever, RetrievalContextBuilder
+from memory.service import MemoryService
+from memory.tools import build_memory_tools
+from memory.vector_store import QdrantVectorStore
+from memory.domain import UserMemorySettings
 
 logger = logging.getLogger(__name__)
 _LOG_FILE: Optional[Path] = None
@@ -59,6 +69,46 @@ def create_agent() -> PlannerAgent:
     if not tools:
         raise RuntimeError("No plugins were loaded. Ensure manifest.json files are valid.")
 
+    memory_service = None
+    if memory_enabled:
+        try:
+            embeddings = SentenceTransformerEmbeddingProvider(
+                embedding_model, embedding_device, embedding_batch_size
+            )
+            memory_repository = MemoryRepository(
+                Path(__file__).parent / "data" / "memory.sqlite3"
+            )
+            memory_repository.save_settings(
+                "default", "default",
+                UserMemorySettings(
+                    automatic_storage_enabled=memory_auto_store_enabled
+                ),
+            )
+            vector_store = QdrantVectorStore(
+                qdrant_url, f"{qdrant_collection_prefix}_v1",
+                embeddings.dimensions, qdrant_api_key,
+            )
+            memory_service = MemoryService(
+                memory_repository, embeddings, vector_store,
+                retriever=MemoryRetriever(
+                    memory_repository, embeddings, vector_store,
+                    min_similarity=memory_min_similarity,
+                ),
+                context_builder=RetrievalContextBuilder(
+                    max_items=memory_max_context_items
+                ),
+            )
+            memory_tools, memory_specs = build_memory_tools(
+                memory_service, tenant_id="default", user_id="default"
+            )
+            tools.update(memory_tools)
+            tool_specs.extend(memory_specs)
+        except Exception:
+            logger.exception(
+                "Memory startup failed; agent will run without memory. "
+                "Start Qdrant and verify the embedding model installation."
+            )
+
     system_prompt = build_system_prompt(tool_specs)
     executor = ToolExecutor(
         client=client,
@@ -67,6 +117,7 @@ def create_agent() -> PlannerAgent:
         model=executor_model,
         temperature=executor_temperature,
         timeout_seconds=executor_timeout_seconds,
+        memory_service=memory_service,
     )
 
     temp_dir = Path(__file__).parent / "tempstore"
@@ -84,6 +135,7 @@ def create_agent() -> PlannerAgent:
         temp_dir=temp_dir,
         repository=repository,
         max_replans=max_replans,
+        memory_service=memory_service,
     )
     logger.info("Agent initialized with %s tools.", len(tools))
     return agent

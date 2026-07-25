@@ -9,6 +9,7 @@ from agents.workflow_models import (
     ExecutionError, ExecutionEvidence, ExecutionResultStatus,
     ExecutorStepRequest, ExecutorStepResult,
 )
+from memory.domain import MemoryOperationRequest, MemoryOperationResult
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class ExecutorAgent:
     def __init__(
         self, client: OpenAI, tools: Dict[str, Callable[..., Any]],
         system_prompt: str, model: str, temperature: float,
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 60.0, memory_service: Any = None,
     ) -> None:
         self.client = client
         self.tools = tools
@@ -28,6 +29,19 @@ class ExecutorAgent:
         self.temperature = temperature
         self.timeout_seconds = timeout_seconds
         self._completed: Dict[str, ExecutorStepResult] = {}
+        self.memory_service = memory_service
+
+    def execute_memory_operation(
+        self, request: MemoryOperationRequest,
+    ) -> MemoryOperationResult:
+        """Execute a bounded structured memory operation assigned by the Planner."""
+        if self.memory_service is None:
+            return MemoryOperationResult(
+                request.operation_id, request.action, "failed",
+                errors=[{"code": "MEMORY_UNAVAILABLE",
+                         "message": "Memory service is not configured."}],
+            )
+        return self.memory_service.execute(request)
 
     def execute_step(self, request: ExecutorStepRequest) -> ExecutorStepResult:
         cached = self._completed.get(request.idempotency_key)

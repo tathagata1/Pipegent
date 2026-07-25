@@ -5,3 +5,4 @@ tempstore/*
 logs/
 user_files/
 data/workflows/
+data/memory.sqlite3*

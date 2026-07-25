@@ -1,5 +1,10 @@
 # Pipegent
 
+Pipegent supports self-hosted long-term memory and knowledge-base RAG using canonical
+SQLite persistence, local Sentence Transformers embeddings, and Qdrant. See
+[docs/MEMORY.md](docs/MEMORY.md) for architecture, privacy controls, setup, testing, and
+reindexing guidance.
+
 Pipegent is an open-source, tool-first AI agent that routes every user request through explicit tools. The agent core stays minimal while real capabilities come from plugins that you can create, configure, and share. This repository bundles the runtime, a manifest-based plugin loader, and a handful of starter plugins (calculator, coin flip, date/time, dice rolling, jokes, and speech output).
 
 > **Before you run Pipegent:** install all dependencies with `pip install -r requirements.txt`.

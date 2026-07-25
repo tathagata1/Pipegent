@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -21,6 +22,10 @@ from prompts.planner_prompt import (
 from services.plan_repository import JsonPlanRepository
 from services.result_validator import ExecutionResultValidator
 from services.workflow_state_machine import WorkflowStateMachine
+from memory.domain import (
+    MemoryAction, MemoryCandidate, MemoryOperationRequest, MemoryScope, MemorySource,
+    MemoryType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,9 @@ class PlannerAgent:
         repository: Optional[JsonPlanRepository] = None,
         validator: Optional[ExecutionResultValidator] = None,
         max_replans: int = 3,
+        memory_service: Any = None, tenant_id: str = "default",
+        user_id: Optional[str] = "default", project_id: Optional[str] = None,
+        agent_id: str = "planner",
     ) -> None:
         self.client = client
         self.executor = executor
@@ -49,12 +57,19 @@ class PlannerAgent:
         self.validator = validator or ExecutionResultValidator()
         self.max_replans = max(0, max_replans)
         self.state_machine = WorkflowStateMachine()
+        self.memory_service = memory_service
+        self.tenant_id, self.user_id = tenant_id, user_id
+        self.project_id, self.agent_id = project_id, agent_id
+        self._memory_disabled_sessions = set()
 
     def handle_request(
         self, user_request: str, session_id: str = "default",
         request_id: Optional[str] = None,
     ) -> str:
         """Accept user input and run until clarification or a terminal state."""
+        directed = self._handle_directed_memory(user_request, session_id)
+        if directed is not None:
+            return directed
         workflow = self.repository.get(request_id) if request_id else None
         if workflow and workflow.state in {
             WorkflowState.COMPLETED, WorkflowState.BLOCKED,
@@ -119,6 +134,10 @@ class PlannerAgent:
                 break
             if workflow.state == WorkflowState.UNDERSTANDING_INTENT:
                 self._understand(workflow)
+            elif workflow.state == WorkflowState.RETRIEVING_MEMORY:
+                self._retrieve_memory(workflow)
+            elif workflow.state == WorkflowState.VALIDATING_RETRIEVED_CONTEXT:
+                self._transition(workflow, WorkflowState.PLANNING)
             elif workflow.state == WorkflowState.PLANNING:
                 self._create_plan(workflow)
             elif workflow.state == WorkflowState.READY_TO_EXECUTE:
@@ -173,7 +192,41 @@ class PlannerAgent:
             "constraints": payload.get("constraints", []),
             "success_criteria": payload.get("success_criteria", []),
         })
-        self._transition(workflow, WorkflowState.PLANNING)
+        self._transition(
+            workflow, WorkflowState.RETRIEVING_MEMORY
+            if self.memory_service is not None else WorkflowState.PLANNING
+        )
+
+    def _retrieve_memory(self, workflow: WorkflowRecord) -> None:
+        if workflow.session_id in self._memory_disabled_sessions:
+            workflow.errors.append({"kind": "retrieved_memory", "context": "",
+                                    "memory_ids": []})
+            self._transition(workflow, WorkflowState.VALIDATING_RETRIEVED_CONTEXT)
+            return
+        request = MemoryOperationRequest(
+            operation_id=uuid.uuid4().hex, action=MemoryAction.SEARCH,
+            tenant_id=self.tenant_id, user_id=self.user_id, agent_id=self.agent_id,
+            session_id=workflow.session_id, project_id=self.project_id,
+            query=workflow.conversation[-1]["content"], top_k=8,
+            filters={"scopes": [
+                MemoryScope.USER.value, MemoryScope.SESSION.value,
+                MemoryScope.PROJECT.value, MemoryScope.ORGANISATION.value,
+                MemoryScope.KNOWLEDGE_BASE.value,
+            ]},
+        )
+        result = self.executor.execute_memory_operation(request)
+        context = (
+            self.memory_service.context_builder.build(result.retrieved)
+            if result.status == "success" else ""
+        )
+        workflow.errors = [
+            item for item in workflow.errors if item.get("kind") != "retrieved_memory"
+        ]
+        workflow.errors.append({
+            "kind": "retrieved_memory", "context": context,
+            "memory_ids": [item.memory_id for item in result.retrieved],
+        })
+        self._transition(workflow, WorkflowState.VALIDATING_RETRIEVED_CONTEXT)
 
     def _create_plan(self, workflow: WorkflowRecord) -> None:
         metadata = next(
@@ -187,6 +240,10 @@ class PlannerAgent:
                 "conversation": workflow.conversation,
                 "available_tools": self._tool_summary(),
                 "constraints": metadata.get("constraints", []),
+                "retrieved_memory": next((
+                    item.get("context", "") for item in reversed(workflow.errors)
+                    if item.get("kind") == "retrieved_memory"
+                ), ""),
             },
         )
         raw_steps = payload.get("steps", [])
@@ -454,6 +511,99 @@ class PlannerAgent:
             {"name": item.get("name"), "description": item.get("description")}
             for item in self.tool_specs
         ]
+
+    def _handle_directed_memory(
+        self, text: str, session_id: str,
+    ) -> Optional[str]:
+        """Deterministic high-authority memory controls; no LLM can bypass policy."""
+        if self.memory_service is None:
+            return None
+        stripped = text.strip()
+        if re.match(
+            r"(?is)^(?:do not|don't|disable)\s+(?:use\s+)?memory"
+            r"(?:\s+(?:for|in))?\s+(?:this\s+)?conversation[.!]?$",
+            stripped,
+        ) or re.match(r"(?is)^do not remember this conversation[.!]?$", stripped):
+            self._memory_disabled_sessions.add(session_id)
+            return "Memory storage and retrieval are disabled for this conversation."
+        if session_id in self._memory_disabled_sessions and re.match(
+            r"(?is)^(?:please\s+)?(?:remember|save|learn)\b", stripped
+        ):
+            return "Memory is disabled for this conversation, so I did not store that."
+        remember = re.match(
+            r"(?is)^(?:please\s+)?(?:remember|save|learn)\s+(?:that\s+|this\s+)?(.+)$",
+            stripped,
+        )
+        if remember:
+            content = remember.group(1).strip().rstrip(".")
+            lowered = content.casefold()
+            memory_type = (
+                MemoryType.USER_PREFERENCE
+                if any(word in lowered for word in ("prefer", "preference"))
+                else MemoryType.PROCEDURE if "procedure" in lowered
+                else MemoryType.PROJECT_FACT if "project" in lowered
+                else MemoryType.USER_FACT
+            )
+            scope = (
+                MemoryScope.PROJECT if "project" in lowered and self.project_id
+                else MemoryScope.USER
+            )
+            request = MemoryOperationRequest(
+                operation_id=uuid.uuid4().hex, action=MemoryAction.CREATE,
+                tenant_id=self.tenant_id, user_id=self.user_id, agent_id=self.agent_id,
+                session_id=session_id, project_id=self.project_id,
+                memory=MemoryCandidate(
+                    content=content, proposed_type=memory_type, proposed_scope=scope,
+                    source=MemorySource.USER_EXPLICIT,
+                    reason="The user explicitly requested long-term storage.",
+                    confidence=1.0, importance=0.8,
+                ), explicit_user_request=True,
+                idempotency_key=f"explicit:{self.tenant_id}:{self.user_id}:{content.casefold()}",
+            )
+            result = self.executor.execute_memory_operation(request)
+            indexed = any(
+                item.get("persisted") and item.get("indexed")
+                for item in result.evidence
+            )
+            if result.status == "success" and (
+                indexed or any(item.get("type") == "duplicate" for item in result.evidence)
+            ):
+                return "I’ll remember that."
+            if result.status == "partial_success":
+                return (
+                    "I saved that, but retrieval indexing is pending; it will be retried."
+                )
+            reason = "; ".join(result.warnings) or (
+                result.errors[0]["message"] if result.errors else "storage was rejected"
+            )
+            return f"I couldn’t remember that: {reason}"
+        if re.match(r"(?is)^what do you remember\b", stripped):
+            request = MemoryOperationRequest(
+                operation_id=uuid.uuid4().hex, action=MemoryAction.LIST,
+                tenant_id=self.tenant_id, user_id=self.user_id,
+                session_id=session_id, project_id=self.project_id,
+            )
+            result = self.executor.execute_memory_operation(request)
+            if not result.records:
+                return "I don’t have any stored memories for this scope."
+            return "Stored memories:\n" + "\n".join(
+                f"- {item.content}" for item in result.records
+            )
+        delete = re.match(
+            r"(?is)^(?:forget|delete memory)\s+(?:memory\s+)?([0-9a-f]{32})$", stripped
+        )
+        if delete:
+            result = self.executor.execute_memory_operation(MemoryOperationRequest(
+                operation_id=uuid.uuid4().hex, action=MemoryAction.DELETE,
+                tenant_id=self.tenant_id, user_id=self.user_id,
+                session_id=session_id, project_id=self.project_id,
+                memory_id=delete.group(1),
+            ))
+            return (
+                "I deleted that memory." if result.status == "success"
+                else "I couldn’t delete that memory."
+            )
+        return None
 
     @staticmethod
     def _require_plan(workflow: WorkflowRecord) -> ExecutionPlan:

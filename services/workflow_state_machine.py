@@ -10,8 +10,16 @@ class InvalidStateTransition(ValueError):
 class WorkflowStateMachine:
     TRANSITIONS: Dict[WorkflowState, FrozenSet[WorkflowState]] = {
         WorkflowState.UNDERSTANDING_INTENT: frozenset({
-            WorkflowState.AWAITING_CLARIFICATION, WorkflowState.PLANNING,
+            WorkflowState.RETRIEVING_MEMORY, WorkflowState.AWAITING_CLARIFICATION,
+            WorkflowState.PLANNING,
             WorkflowState.BLOCKED, WorkflowState.FAILED, WorkflowState.CANCELLED,
+        }),
+        WorkflowState.RETRIEVING_MEMORY: frozenset({
+            WorkflowState.VALIDATING_RETRIEVED_CONTEXT, WorkflowState.PLANNING,
+            WorkflowState.FAILED, WorkflowState.CANCELLED,
+        }),
+        WorkflowState.VALIDATING_RETRIEVED_CONTEXT: frozenset({
+            WorkflowState.PLANNING, WorkflowState.FAILED, WorkflowState.CANCELLED,
         }),
         WorkflowState.AWAITING_CLARIFICATION: frozenset({
             WorkflowState.UNDERSTANDING_INTENT, WorkflowState.CANCELLED,
@@ -32,6 +40,9 @@ class WorkflowStateMachine:
             WorkflowState.READY_TO_EXECUTE, WorkflowState.EXECUTING_STEP,
             WorkflowState.REPLANNING, WorkflowState.COMPLETED,
             WorkflowState.BLOCKED, WorkflowState.FAILED, WorkflowState.CANCELLED,
+        }),
+        WorkflowState.CONSIDERING_MEMORY_WRITE: frozenset({
+            WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED,
         }),
         WorkflowState.REPLANNING: frozenset({
             WorkflowState.READY_TO_EXECUTE, WorkflowState.BLOCKED,
