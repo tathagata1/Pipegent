@@ -11,15 +11,16 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
 - **Resumable workflows** – plans, revisions, results, validation decisions, retries, and clarification history are atomically persisted under `data/workflows/`.
 - **Ephemeral tempstore** – step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
 - **Structured logging** – every run writes a time-stamped file under `logs/`, while the console stays minimal (`You:`, `thinking...`, `Agent:`). Logs capture planner/executor interactions, plugin-loading diagnostics, and failure traces without cluttering the terminal.
-- **Config-driven OpenAI clients** – `config.ini` contains the OpenAI credentials and planner/executor settings in one place.
+- **Config-driven OpenAI clients** – `config/config.ini` contains the OpenAI credentials and planner/executor settings in one place.
 
 ## Repository Structure
 ```
 .
 |-- main.py                  # CLI entry point + logging bootstrap + REPL loop
-|-- config.py                # Loads settings from config.ini
-|-- example.config.ini       # Safe configuration template
-|-- config.ini               # Local configuration and secrets (git-ignored)
+|-- config/
+|   |-- __init__.py          # Loads settings from config.ini
+|   |-- example.config.ini   # Safe configuration template
+|   `-- config.ini           # Local configuration and secrets (git-ignored)
 |-- agents/
 |   |-- planner.py           # Planner agent + workflow coordinator
 |   |-- tool_executor.py     # Constrained one-step Executor Agent
@@ -54,9 +55,9 @@ Pipegent is an open-source, tool-first AI agent that routes every user request t
    pip install -r requirements.txt
    ```
 2. **Configure credentials**:
-   - Copy `example.config.ini` to `config.ini`, then set your OpenAI key and adjust the model settings if needed:
+   - Copy `config/example.config.ini` to `config/config.ini`, then set your OpenAI key and adjust the model settings if needed:
    ```bash
-   copy example.config.ini config.ini
+   copy config\example.config.ini config\config.ini
    ```
    ```ini
    [OPENAI]

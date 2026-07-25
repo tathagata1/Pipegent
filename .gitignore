@@ -1,4 +1,4 @@
-config.ini
+config/config.ini
 *.pyc
 __pycache__/
 tempstore/*
