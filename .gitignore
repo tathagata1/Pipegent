@@ -4,3 +4,4 @@ __pycache__/
 tempstore/*
 logs/
 user_files/
+data/workflows/

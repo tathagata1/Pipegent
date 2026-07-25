@@ -1,48 +1,41 @@
+from __future__ import annotations
+
 import json
 import logging
-import secrets
+import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
 
-from agents.tool_executor import ToolExecutor
+from agents.tool_executor import ExecutorAgent
+from agents.workflow_models import (
+    ClarificationExchange, ExecutionPlan, ExecutionResultStatus,
+    ExecutorStepRequest, PlanRevision, PlanStatus, PlanStep, StepStatus,
+    WorkflowRecord, WorkflowState, utc_now,
+)
+from prompts.planner_prompt import (
+    INTENT_SCHEMA, PLAN_SCHEMA, PLANNER_SYSTEM_PROMPT, REPLAN_SCHEMA,
+)
+from services.plan_repository import JsonPlanRepository
+from services.result_validator import ExecutionResultValidator
+from services.workflow_state_machine import WorkflowStateMachine
 
 logger = logging.getLogger(__name__)
 
 
 class PlannerAgent:
-    PLAN_SYSTEM_PROMPT = (
-        "You are Pipegent's planning LLM. Break user goals into an ordered list of "
-        "concrete steps that a separate execution agent can follow. Produce strictly "
-        "valid JSON that looks like {{\"steps\": [\"step description\", ...]}} and return "
-        "only as many steps as are truly required (between 1 and {max_steps}). Skip filler "
-        "actions like greetings, generic follow-up questions, or waiting unless the user "
-        "explicitly requests them. Each step must correspond to exactly one tool invocation "
-        "or simple action - never describe loops or say 'repeat'; instead enumerate every "
-        "iteration explicitly (e.g., four dice rolls = four separate steps). Mention the "
-        "tool to call (e.g., roll_dice, calculator) in each step. When using roll_dice, "
-        "state rolls=1 unless the user explicitly asks for a different value. Remember that the "
-        "calculator tool accepts only two inputs; summing more than two numbers requires multiple "
-        "calculator steps (each adding two values or partial totals). Refer to prior results by step "
-        "number (e.g., 'use the value from step 1') instead of inventing variable names."
-    )
-    SUMMARY_SYSTEM_PROMPT = (
-        "You are Pipegent's planning LLM. Given the original request and the outputs "
-        "from each executed step, craft a final response for the user that cites the "
-        "completed work."
-    )
+    """User-facing facade and owner of the persisted two-agent workflow."""
 
     def __init__(
-        self,
-        client: OpenAI,
-        executor: ToolExecutor,
-        tool_specs: List[Dict[str, Any]],
-        planner_model: str,
-        planner_temperature: float,
-        max_steps: int,
-        temp_dir: Path,
+        self, client: OpenAI, executor: ExecutorAgent,
+        tool_specs: List[Dict[str, Any]], planner_model: str,
+        planner_temperature: float, max_steps: int, temp_dir: Path,
         context_file: Optional[Path] = None,
+        repository: Optional[JsonPlanRepository] = None,
+        validator: Optional[ExecutionResultValidator] = None,
+        max_replans: int = 3,
     ) -> None:
         self.client = client
         self.executor = executor
@@ -52,323 +45,425 @@ class PlannerAgent:
         self.max_steps = max(1, max_steps)
         self.temp_dir = temp_dir
         self.context_file = context_file
-        self.context_history: List[Dict[str, str]] = []
-        self._context_file_mtime: Optional[float] = None
-        self._load_context_history()
+        self.repository = repository or JsonPlanRepository(temp_dir / "workflows")
+        self.validator = validator or ExecutionResultValidator()
+        self.max_replans = max(0, max_replans)
+        self.state_machine = WorkflowStateMachine()
 
-    def handle_request(self, user_request: str) -> str:
-        logger.info("Planner received request: %s", user_request)
-        self._maybe_refresh_context_history()
-        created_files: List[Path] = []
-        final_response = ""
-        step_results: List[Dict[str, Any]] = []
-        steps: List[str] = []
+    def handle_request(
+        self, user_request: str, session_id: str = "default",
+        request_id: Optional[str] = None,
+    ) -> str:
+        """Accept user input and run until clarification or a terminal state."""
+        workflow = self.repository.get(request_id) if request_id else None
+        if workflow and workflow.state in {
+            WorkflowState.COMPLETED, WorkflowState.BLOCKED,
+            WorkflowState.FAILED, WorkflowState.CANCELLED,
+        }:
+            return workflow.final_response or self._drive(workflow)
+        if workflow is None:
+            workflow = self.repository.find_active_by_session(session_id)
+        if workflow and workflow.state == WorkflowState.AWAITING_CLARIFICATION:
+            exchange = workflow.clarification_history[-1]
+            exchange.answer = user_request
+            exchange.answered_at = utc_now()
+            workflow.conversation.append({"role": "user", "content": user_request})
+            self._transition(workflow, WorkflowState.UNDERSTANDING_INTENT)
+        elif workflow is None:
+            workflow = WorkflowRecord(
+                id=request_id or uuid.uuid4().hex, session_id=session_id,
+                state=WorkflowState.UNDERSTANDING_INTENT,
+                objective=user_request,
+                conversation=[{"role": "user", "content": user_request}],
+                created_at=utc_now(), updated_at=utc_now(),
+                max_replans=self.max_replans,
+            )
+            self._save(workflow)
+        else:
+            # Additional input while active is relevant context, not a second workflow.
+            workflow.conversation.append({"role": "user", "content": user_request})
+            workflow.updated_at = utc_now()
+            self._save(workflow)
+
         try:
-            steps = self._plan_steps(user_request)
-
-            for index, step in enumerate(steps, start=1):
-                logger.info("Executing plan step %s/%s: %s", index, len(steps), step)
-                instruction = self._build_executor_instruction(
-                    user_request, step, index, step_results
-                )
-                result_text = self.executor.execute(instruction)
-                file_path = self._write_temp_file(result_text)
-                created_files.append(file_path)
-                step_results.append(
-                    {
-                        "step": step,
-                        "result": result_text,
-                        "file_path": str(file_path),
-                    }
-                )
-
-            final_response = self._build_final_response(user_request, steps, step_results)
+            return self._drive(workflow)
         except Exception as exc:
-            logger.exception("Planner encountered an error while handling request.")
-            final_response = f"Planner error: {exc}"
-        finally:
-            self._cleanup_temp_files(created_files)
-            if final_response:
-                self._append_history(user_request, steps, step_results, final_response)
-                logger.info("Planner completed request with %s steps.", len(steps))
+            logger.exception("Planner workflow failed workflow_id=%s", workflow.id)
+            workflow.errors.append({
+                "code": type(exc).__name__, "message": str(exc), "at": utc_now()
+            })
+            if self.state_machine.can_transition(workflow.state, WorkflowState.FAILED):
+                self._transition(workflow, WorkflowState.FAILED)
+            workflow.final_response = f"The task failed: {exc}"
+            self._save(workflow)
+            return workflow.final_response
 
-        return final_response
+    def cancel(self, session_id: str = "default") -> bool:
+        workflow = self.repository.find_active_by_session(session_id)
+        if workflow is None:
+            return False
+        workflow.cancelled = True
+        if self.state_machine.can_transition(workflow.state, WorkflowState.CANCELLED):
+            self._transition(workflow, WorkflowState.CANCELLED)
+        workflow.final_response = "The task was cancelled. No further steps will be dispatched."
+        self._save(workflow)
+        return True
 
-    def _plan_steps(self, user_request: str) -> List[str]:
-        tool_lines = "\n".join(
-            f"- {spec.get('name')}: {spec.get('description')}" for spec in self.tool_specs
-        ) or "(No plugins available)"
+    def _drive(self, workflow: WorkflowRecord) -> str:
+        while workflow.state not in {
+            WorkflowState.AWAITING_CLARIFICATION, WorkflowState.COMPLETED,
+            WorkflowState.BLOCKED, WorkflowState.FAILED, WorkflowState.CANCELLED,
+        }:
+            if workflow.cancelled:
+                self._transition(workflow, WorkflowState.CANCELLED)
+                break
+            if workflow.state == WorkflowState.UNDERSTANDING_INTENT:
+                self._understand(workflow)
+            elif workflow.state == WorkflowState.PLANNING:
+                self._create_plan(workflow)
+            elif workflow.state == WorkflowState.READY_TO_EXECUTE:
+                self._select_step(workflow)
+            elif workflow.state == WorkflowState.EXECUTING_STEP:
+                self._execute_current_step(workflow)
+            elif workflow.state == WorkflowState.VALIDATING_STEP:
+                self._validate_current_step(workflow)
+            elif workflow.state == WorkflowState.REPLANNING:
+                self._replan(workflow)
+            else:
+                raise RuntimeError(f"Unhandled workflow state: {workflow.state}")
 
-        user_prompt = (
-            f"User request:\n{user_request}\n\nAvailable tools:\n{tool_lines}\n\n"
-            f"Create between 1 and {self.max_steps} ordered steps that the execution agent should perform. "
-            "Only include essential actions that directly move the user toward their goal; "
-            "omit pleasantries or generic follow-ups unless explicitly requested. Each step must map to a single tool call. "
-            "If the user needs repeated actions (e.g., roll four times), output four distinct steps, one per iteration. "
-            "Remember calculator accepts exactly two inputs; create additional calculator steps to accumulate sums beyond two numbers, and refer to earlier outputs by step number (e.g., 'use step 1 result') rather than inventing new variables."
+        if workflow.state == WorkflowState.AWAITING_CLARIFICATION:
+            questions = workflow.clarification_history[-1].questions
+            return "\n".join(questions)
+        if workflow.state == WorkflowState.COMPLETED:
+            if not workflow.final_response:
+                workflow.final_response = self._build_final_response(workflow)
+                self._save(workflow)
+            return workflow.final_response
+        if workflow.state == WorkflowState.BLOCKED:
+            return workflow.final_response or (
+                "The task is blocked: " + "; ".join(workflow.blockers)
+            )
+        if workflow.state == WorkflowState.CANCELLED:
+            return workflow.final_response or "The task was cancelled."
+        return workflow.final_response or "The task failed before it could be completed."
+
+    def _understand(self, workflow: WorkflowRecord) -> None:
+        payload = self._planner_json(
+            "Analyse intent using the full conversation. Do not repeat answered questions.\n"
+            + INTENT_SCHEMA,
+            {"conversation": workflow.conversation, "available_tools": self._tool_summary()},
         )
-
-        messages = [
-            {
-                "role": "system",
-                "content": self.PLAN_SYSTEM_PROMPT.format(max_steps=self.max_steps),
-            }
+        workflow.objective = str(payload.get("objective") or workflow.objective)
+        questions = [
+            str(item).strip() for item in payload.get("questions", []) if str(item).strip()
         ]
-        messages.extend(self.context_history)
-        messages.append({"role": "user", "content": user_prompt})
+        if payload.get("needs_clarification") and questions:
+            workflow.clarification_history.append(
+                ClarificationExchange(questions=questions, answer=None, asked_at=utc_now())
+            )
+            self._transition(workflow, WorkflowState.AWAITING_CLARIFICATION)
+            return
+        workflow.errors = [
+            item for item in workflow.errors if item.get("kind") != "intent_metadata"
+        ]
+        workflow.errors.append({
+            "kind": "intent_metadata",
+            "assumptions": payload.get("assumptions", []),
+            "constraints": payload.get("constraints", []),
+            "success_criteria": payload.get("success_criteria", []),
+        })
+        self._transition(workflow, WorkflowState.PLANNING)
 
+    def _create_plan(self, workflow: WorkflowRecord) -> None:
+        metadata = next(
+            (item for item in reversed(workflow.errors)
+             if item.get("kind") == "intent_metadata"), {}
+        )
+        payload = self._planner_json(
+            f"Create no more than {self.max_steps} steps.\n{PLAN_SCHEMA}",
+            {
+                "objective": workflow.objective,
+                "conversation": workflow.conversation,
+                "available_tools": self._tool_summary(),
+                "constraints": metadata.get("constraints", []),
+            },
+        )
+        raw_steps = payload.get("steps", [])
+        if not raw_steps:
+            raise ValueError("Planner returned no executable steps.")
+        plan_id = uuid.uuid4().hex
+        steps = self._parse_steps(raw_steps[:self.max_steps])
+        now = utc_now()
+        workflow.plan = ExecutionPlan(
+            id=plan_id, objective=workflow.objective,
+            assumptions=list(metadata.get("assumptions", [])),
+            constraints=list(metadata.get("constraints", [])),
+            success_criteria=list(metadata.get("success_criteria", [])),
+            status=PlanStatus.ACTIVE, steps=steps, created_at=now, updated_at=now,
+        )
+        self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
+
+    def _select_step(self, workflow: WorkflowRecord) -> None:
+        plan = self._require_plan(workflow)
+        active = [step for step in plan.steps if step.status == StepStatus.IN_PROGRESS]
+        if len(active) > 1:
+            raise RuntimeError("Invariant violation: multiple active steps.")
+        if active:
+            plan.current_step_id = active[0].id
+            self._transition(workflow, WorkflowState.EXECUTING_STEP)
+            return
+        pending = sorted(
+            (step for step in plan.steps if step.status == StepStatus.PENDING),
+            key=lambda item: item.sequence,
+        )
+        if not pending:
+            plan.status = PlanStatus.COMPLETED
+            self._transition(workflow, WorkflowState.COMPLETED)
+            return
+        completed = {
+            step.id for step in plan.steps if step.status == StepStatus.COMPLETED
+        }
+        step = pending[0]
+        if any(dependency not in completed for dependency in step.dependencies):
+            workflow.blockers.append(f"Dependencies unavailable for {step.id}.")
+            step.status = StepStatus.BLOCKED
+            plan.status = PlanStatus.BLOCKED
+            self._transition(workflow, WorkflowState.BLOCKED)
+            return
+        step.status = StepStatus.IN_PROGRESS
+        plan.current_step_id = step.id
+        plan.updated_at = utc_now()
+        self._transition(workflow, WorkflowState.EXECUTING_STEP)
+
+    def _execute_current_step(self, workflow: WorkflowRecord) -> None:
+        plan = self._require_plan(workflow)
+        step = self._current_step(plan)
+        prior = next(
+            (result for result in reversed(workflow.executor_results)
+             if result.plan_id == plan.id and result.step_id == step.id), None
+        )
+        if prior is None:
+            relevant = {
+                result.step_id: {
+                    "summary": result.summary,
+                    "output": result.output,
+                    "discovered_facts": result.discovered_facts,
+                }
+                for result in workflow.executor_results
+                if result.step_id in step.dependencies
+            }
+            request = ExecutorStepRequest(
+                plan_id=plan.id, step_id=step.id, objective=plan.objective,
+                instruction=step.description, expected_outcome=step.expected_outcome,
+                validation_criteria=step.validation_criteria,
+                relevant_context=relevant, constraints=plan.constraints,
+                idempotency_key=f"{workflow.id}:{plan.id}:{step.id}",
+            )
+            result = self.executor.execute_step(request)
+            workflow.executor_results.append(result)
+            self._save(workflow)
+        self._transition(workflow, WorkflowState.VALIDATING_STEP)
+
+    def _validate_current_step(self, workflow: WorkflowRecord) -> None:
+        plan = self._require_plan(workflow)
+        step = self._current_step(plan)
+        result = next(
+            item for item in reversed(workflow.executor_results)
+            if item.plan_id == plan.id and item.step_id == step.id
+        )
+        decision = self.validator.validate(step, result)
+        decision.plan_id = plan.id
+        decision.step_id = step.id
+        decision.decided_at = utc_now()
+        workflow.validation_decisions.append(decision)
+        logger.info(
+            "Validation workflow_id=%s plan_id=%s revision=%s step_id=%s valid=%s",
+            workflow.id, plan.id, plan.revision, step.id, decision.valid,
+        )
+        if decision.valid:
+            step.status = StepStatus.COMPLETED
+            plan.current_step_id = None
+            if all(item.status in {StepStatus.COMPLETED, StepStatus.SKIPPED}
+                   for item in plan.steps):
+                plan.status = PlanStatus.COMPLETED
+                self._transition(workflow, WorkflowState.COMPLETED)
+            else:
+                self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
+            return
+        retryable = any(error.retryable for error in result.errors)
+        if (retryable or result.status == ExecutionResultStatus.SUCCESS) and (
+            step.retry_count < step.max_retries
+        ):
+            step.retry_count += 1
+            workflow.executor_results = [
+                item for item in workflow.executor_results
+                if not (item.plan_id == plan.id and item.step_id == step.id)
+            ]
+            logger.info("Retry workflow_id=%s step_id=%s count=%s reason=%s",
+                        workflow.id, step.id, step.retry_count, decision.reason)
+            self._transition(workflow, WorkflowState.EXECUTING_STEP)
+            return
+        self._transition(workflow, WorkflowState.REPLANNING)
+
+    def _replan(self, workflow: WorkflowRecord) -> None:
+        plan = self._require_plan(workflow)
+        if workflow.replan_count >= workflow.max_replans:
+            current = self._current_step(plan)
+            current.status = StepStatus.FAILED
+            plan.status = PlanStatus.FAILED
+            workflow.final_response = (
+                "The task failed because the maximum re-plan limit was reached."
+            )
+            self._transition(workflow, WorkflowState.FAILED)
+            return
+        workflow.replan_count += 1
+        current = self._current_step(plan)
+        result = next(
+            item for item in reversed(workflow.executor_results)
+            if item.step_id == current.id
+        )
+        payload = self._planner_json(
+            "Choose a safe response to the result. Preserve completed steps.\n"
+            + REPLAN_SCHEMA,
+            {
+                "objective": plan.objective,
+                "current_step": asdict(current),
+                "result": asdict(result),
+                "completed_steps": [
+                    asdict(item) for item in plan.steps
+                    if item.status == StepStatus.COMPLETED
+                ],
+                "remaining_steps": [
+                    asdict(item) for item in plan.steps
+                    if item.status != StepStatus.COMPLETED
+                ],
+            },
+        )
+        reason = str(payload.get("reason") or "Execution result required re-planning.")
+        plan.revision_history.append(PlanRevision(
+            revision=plan.revision, reason=reason, changed_at=utc_now(),
+            steps_snapshot=[asdict(item) for item in plan.steps],
+        ))
+        plan.revision += 1
+        action = payload.get("action")
+        if action == "block":
+            current.status = StepStatus.BLOCKED
+            plan.status = PlanStatus.BLOCKED
+            workflow.blockers.append(reason)
+            workflow.final_response = f"The task is blocked: {reason}"
+            self._transition(workflow, WorkflowState.BLOCKED)
+            return
+        if action == "fail":
+            current.status = StepStatus.FAILED
+            plan.status = PlanStatus.FAILED
+            workflow.final_response = f"The task failed: {reason}"
+            self._transition(workflow, WorkflowState.FAILED)
+            return
+        if action == "skip":
+            current.status = StepStatus.SKIPPED
+        else:
+            replacements = self._parse_steps(payload.get("steps", []))
+            completed = [item for item in plan.steps if item.status == StepStatus.COMPLETED]
+            if replacements:
+                existing_ids = {item.id for item in completed}
+                replacements = [item for item in replacements if item.id not in existing_ids]
+                plan.steps = completed + replacements
+            else:
+                current.status = StepStatus.PENDING
+                current.retry_count = 0
+        plan.current_step_id = None
+        plan.updated_at = utc_now()
+        self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
+
+    def _build_final_response(self, workflow: WorkflowRecord) -> str:
+        plan = self._require_plan(workflow)
         response = self.client.chat.completions.create(
             model=self.planner_model,
-            messages=messages,
+            messages=[
+                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                {"role": "user", "content": (
+                    "Write the concise final user-facing answer. Mention completed outputs "
+                    "and material skipped work or limitations. Do not expose internal messages.\n"
+                    + json.dumps({
+                        "objective": plan.objective,
+                        "steps": [asdict(item) for item in plan.steps],
+                        "results": [asdict(item) for item in workflow.executor_results],
+                    }, default=str)
+                )},
+            ],
             temperature=self.planner_temperature,
         )
+        return (response.choices[0].message.content or "").strip()
 
-        content = response.choices[0].message.content.strip()
-        logger.debug("Planner plan response: %s", content)
+    def _planner_json(self, instruction: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        response = self.client.chat.completions.create(
+            model=self.planner_model,
+            messages=[
+                {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
+                {"role": "user", "content": instruction + "\n" +
+                 json.dumps(payload, ensure_ascii=False, default=str)},
+            ],
+            temperature=self.planner_temperature,
+        )
+        content = (response.choices[0].message.content or "").strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict):
+            raise ValueError("Planner response must be a JSON object.")
+        return parsed
 
-        planned_steps: List[str] = []
-        try:
-            parsed = json.loads(content)
-            candidate_steps = parsed.get("steps", [])
-            if isinstance(candidate_steps, list):
-                for raw in candidate_steps:
-                    text_step = str(raw).strip()
-                    if not text_step:
-                        continue
-                    if self._is_filler_step(text_step):
-                        continue
-                    if not self._mentions_tool(text_step):
-                        continue
-                    planned_steps.append(text_step)
-        except json.JSONDecodeError:
-            pass
+    def _parse_steps(self, raw_steps: List[Dict[str, Any]]) -> List[PlanStep]:
+        steps: List[PlanStep] = []
+        for index, raw in enumerate(raw_steps, 1):
+            step_id = str(raw.get("id") or f"step-{index}")
+            steps.append(PlanStep(
+                id=step_id, sequence=int(raw.get("sequence", index)),
+                title=str(raw.get("title") or step_id),
+                description=str(raw.get("description") or raw.get("title") or ""),
+                expected_outcome=str(raw.get("expected_outcome") or "Step completed"),
+                validation_criteria=[
+                    str(item) for item in raw.get("validation_criteria", [])
+                ],
+                dependencies=[str(item) for item in raw.get("dependencies", [])],
+                max_retries=max(0, int(raw.get("max_retries", 2))),
+            ))
+        return steps
 
-        if not planned_steps:
-            planned_steps = [user_request]
+    def _transition(self, workflow: WorkflowRecord, target: WorkflowState) -> None:
+        old = workflow.state
+        workflow.state = self.state_machine.transition(old, target)
+        workflow.updated_at = utc_now()
+        logger.info(
+            "Workflow transition workflow_id=%s plan_id=%s revision=%s "
+            "from=%s to=%s step_id=%s",
+            workflow.id, workflow.plan.id if workflow.plan else None,
+            workflow.plan.revision if workflow.plan else None,
+            old.value, target.value,
+            workflow.plan.current_step_id if workflow.plan else None,
+        )
+        self._save(workflow)
 
-        return planned_steps[: self.max_steps]
+    def _save(self, workflow: WorkflowRecord) -> None:
+        workflow.updated_at = utc_now()
+        self.repository.save(workflow)
 
-    def _mentions_tool(self, step: str) -> bool:
-        lowered = step.lower()
-        for spec in self.tool_specs:
-            name = str(spec.get("name", "")).lower()
-            if name and name in lowered:
-                return True
-        return False
+    def _tool_summary(self) -> List[Dict[str, Any]]:
+        return [
+            {"name": item.get("name"), "description": item.get("description")}
+            for item in self.tool_specs
+        ]
 
     @staticmethod
-    def _is_filler_step(step: str) -> bool:
-        fillers = [
-            "greet","hello","hi","thank","assist you today","offer further assistance","wait for","check in"
-        ]
-        lowered = step.lower()
-        return any(keyword in lowered for keyword in fillers)
+    def _require_plan(workflow: WorkflowRecord) -> ExecutionPlan:
+        if workflow.plan is None:
+            raise RuntimeError("Workflow has no plan.")
+        return workflow.plan
 
-    def _build_executor_instruction(
-        self,
-        user_request: str,
-        step: str,
-        index: int,
-        prior_results: List[Dict[str, Any]],
-    ) -> str:
-        if prior_results:
-            sections = []
-            for idx, entry in enumerate(prior_results):
-                file_path = Path(entry["file_path"]) if entry.get("file_path") else None
-                try:
-                    file_contents = (
-                        file_path.read_text(encoding="utf-8") if file_path else entry["result"]
-                    )
-                except OSError:
-                    file_contents = entry["result"]
-                preview = file_contents[:300]
-                sections.append(
-                    f"Step {idx + 1}: {entry['step']}\nFile: {entry['file_path']}\nOutput preview: {preview}"
-                )
-            previous = "\n\n".join(sections)
-        else:
-            previous = "None yet."
-
-        recent_context = (
-            json.dumps(self.context_history[-4:], ensure_ascii=False)
-            if self.context_history
-            else "None."
-        )
-
-        return (
-            f"Original request:\n{user_request}\n\n"
-            f"You are executing plan step #{index}: {step}.\n"
-            f"Recent conversation context:\n{recent_context}\n\n"
-            f"Previous step outputs:\n{previous}\n\n"
-            "Use the available tools to accomplish this step. Execute it exactly once - do not loop or batch. "
-            "Keep tool arguments singular (for example, leave roll_dice 'rolls' at 1 unless this step explicitly says otherwise)."
-        )
-
-    def _build_final_response(
-        self,
-        user_request: str,
-        steps: List[str],
-        results: List[Dict[str, Any]],
-    ) -> str:
-        summarized_results = []
-        for entry in results:
-            file_path = Path(entry["file_path"]) if entry.get("file_path") else None
-            try:
-                file_contents = (
-                    file_path.read_text(encoding="utf-8") if file_path else entry["result"]
-                )
-            except OSError:
-                file_contents = entry["result"]
-
-            summarized_results.append(
-                {
-                    "step": entry["step"],
-                    "output_preview": file_contents[:1000],
-                }
-            )
-
-        payload = {
-            "user_request": user_request,
-            "steps": steps,
-            "results": summarized_results,
-        }
-
-        messages = [
-            {"role": "system", "content": self.SUMMARY_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Craft the final response for the user using this context:\n"
-                    + json.dumps(payload, ensure_ascii=False)
-                ),
-            },
-        ]
-
-        response = self.client.chat.completions.create(
-            model=self.planner_model,
-            messages=messages,
-            temperature=self.planner_temperature,
-        )
-
-        final_content = response.choices[0].message.content.strip()
-        return final_content
-
-    def _write_temp_file(self, data: str) -> Path:
-        self.temp_dir.mkdir(parents=True, exist_ok=True)
-        filename = secrets.token_hex(8) + ".txt"
-        file_path = self.temp_dir / filename
-        file_path.write_text(str(data), encoding="utf-8")
-        return file_path
-
-    def _cleanup_temp_files(self, files: List[Path]) -> None:
-        for file_path in files:
-            try:
-                file_path.unlink()
-            except FileNotFoundError:
-                pass
-
-    def _append_history(
-        self,
-        user_request: str,
-        steps: List[str],
-        step_results: List[Dict[str, Any]],
-        final_response: str,
-    ) -> None:
-        if not final_response:
-            return
-
-        condensed_results = []
-        for entry in step_results:
-            condensed_results.append(
-                {
-                    "step": entry.get("step", ""),
-                    "result_preview": str(entry.get("result", ""))[:500],
-                }
-            )
-
-        summary_payload = {
-            "steps": steps,
-            "results": condensed_results,
-            "final_response": final_response,
-        }
-
-        self.context_history.append(
-            {"role": "user", "content": f"Previous request:\n{user_request}"}
-        )
-        self.context_history.append(
-            {
-                "role": "assistant",
-                "content": (
-                    "Completed prior interaction:\n"
-                    + json.dumps(summary_payload, ensure_ascii=False)
-                ),
-            }
-        )
-        self._persist_context_history()
-
-    def _load_context_history(self) -> None:
-        if not self.context_file:
-            return
-        try:
-            raw_text = self.context_file.read_text(encoding="utf-8")
-            mtime = self.context_file.stat().st_mtime
-        except FileNotFoundError:
-            self.context_history = []
-            self._context_file_mtime = None
-            return
-        except OSError:
-            return
-
-        try:
-            raw = json.loads(raw_text)
-        except json.JSONDecodeError:
-            self.context_history = []
-            self._context_file_mtime = mtime
-            return
-
-        cleaned: List[Dict[str, str]] = []
-        if isinstance(raw, list):
-            for entry in raw:
-                if (
-                    isinstance(entry, dict)
-                    and "role" in entry
-                    and "content" in entry
-                ):
-                    cleaned.append(
-                        {
-                            "role": str(entry["role"]),
-                            "content": str(entry["content"]),
-                        }
-                    )
-
-        self.context_history = cleaned
-        self._context_file_mtime = mtime
-
-    def _persist_context_history(self) -> None:
-        if not self.context_file:
-            return
-        try:
-            self.context_file.parent.mkdir(parents=True, exist_ok=True)
-            self.context_file.write_text(
-                json.dumps(self.context_history, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-            self._context_file_mtime = self.context_file.stat().st_mtime
-        except OSError:
-            pass
-
-    def _maybe_refresh_context_history(self) -> None:
-        if not self.context_file:
-            return
-        try:
-            current_mtime = self.context_file.stat().st_mtime
-        except FileNotFoundError:
-            if self.context_history:
-                self.context_history = []
-            self._context_file_mtime = None
-            return
-        except OSError:
-            return
-
-        if self._context_file_mtime is None or current_mtime > self._context_file_mtime:
-            self._load_context_history()
+    @staticmethod
+    def _current_step(plan: ExecutionPlan) -> PlanStep:
+        matches = [item for item in plan.steps if item.id == plan.current_step_id]
+        if len(matches) != 1:
+            raise RuntimeError("Plan does not have exactly one current step.")
+        return matches[0]

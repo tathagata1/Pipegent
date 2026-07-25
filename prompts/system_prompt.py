@@ -1,20 +1,7 @@
 import json
 from typing import Any, Dict, List
 
-SYSTEM_PROMPT_TEMPLATE = """
-You are a strict tool-using AI agent.
-
-RULES:
-1. Always respond ONLY with valid JSON that selects a tool:
-   {"tool": "<tool_name>", "args": {...}}
-   - Never output plain text outside the JSON.
-   - Never explain your reasoning.
-
-2. Available tools and required args:
-{tools_block}
-
-3. A tool call is mandatory for every response. If nothing else fits, call speech with the words you want to say.
-"""
+from prompts.executor_prompt import EXECUTOR_SYSTEM_PROMPT
 
 
 def build_system_prompt(tool_specs: List[Dict[str, Any]]) -> str:
@@ -38,4 +25,4 @@ def build_system_prompt(tool_specs: List[Dict[str, Any]]) -> str:
         )
 
     tools_block = "\n".join(tool_lines)
-    return SYSTEM_PROMPT_TEMPLATE.replace("{tools_block}", tools_block)
+    return EXECUTOR_SYSTEM_PROMPT.replace("{tools_block}", tools_block)

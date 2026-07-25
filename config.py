@@ -23,3 +23,7 @@ executor_model = config["EXECUTER_LLM"]["model"]
 executor_temperature = config.getfloat("EXECUTER_LLM", "temperature", fallback=0.0)
 
 max_steps = config.getint("AGENT", "max_steps", fallback=5)
+max_replans = config.getint("AGENT", "max_replans", fallback=3)
+executor_timeout_seconds = config.getfloat(
+    "AGENT", "executor_timeout_seconds", fallback=60.0
+)

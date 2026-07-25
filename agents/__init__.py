@@ -1,4 +1,4 @@
 from agents.planner import PlannerAgent
-from agents.tool_executor import ToolExecutor
+from agents.tool_executor import ExecutorAgent, ToolExecutor
 
-__all__ = ["PlannerAgent", "ToolExecutor"]
+__all__ = ["PlannerAgent", "ExecutorAgent", "ToolExecutor"]
