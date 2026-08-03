@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import uuid
 import re
 from dataclasses import asdict
@@ -12,6 +13,7 @@ from typing import Any, Dict, List, Optional
 from openai import OpenAI
 
 from agents.tool_executor import ExecutorAgent
+from console_output import display_message
 from agents.workflow_models import (
     ClarificationExchange, ExecutionPlan, ExecutionResultStatus,
     ExecutorStepRequest, PlanRevision, PlanStatus, PlanStep, StepStatus,
@@ -102,6 +104,16 @@ class PlannerAgent:
             return workflow.final_response or self._drive(workflow)
         if workflow is None:
             workflow = self.repository.find_active_by_session(session_id)
+        if workflow is None and request_id is None:
+            local_response = self._handle_local_response(user_request)
+            if local_response is not None:
+                log_event(
+                    logger, "planner.request.local_response", level=logging.INFO,
+                    trace_id=trace_id, session_id=session_id,
+                    elapsed_ms=round((perf_counter() - request_started) * 1000, 2),
+                    response=local_response,
+                )
+                return local_response
         if workflow is not None:
             self._add_recent_session_context(workflow)
         if workflow and workflow.state == WorkflowState.AWAITING_CLARIFICATION:
@@ -240,12 +252,13 @@ class PlannerAgent:
             if item.get("kind") == "retrieved_memory"
         ), "")
         payload = self._planner_json(
-            "Analyse intent using the full conversation. Do not repeat answered questions.\n"
-            + INTENT_SCHEMA,
+            f"Analyse intent and create the executable plan in one pass. Create no more "
+            f"than {self.max_steps} steps. Do not repeat answered questions.\n"
+            + INTENT_SCHEMA + "\nStep schema:\n" + PLAN_SCHEMA,
             {
-                "conversation": workflow.conversation,
-                "retrieved_memory": retrieved_memory,
                 "available_tools": self._tool_summary(),
+                "retrieved_memory": retrieved_memory,
+                "conversation": workflow.conversation,
             },
             purpose="understand_intent", workflow_id=workflow.id,
         )
@@ -272,6 +285,17 @@ class PlannerAgent:
             "constraints": payload.get("constraints", []),
             "success_criteria": payload.get("success_criteria", []),
         })
+        direct_response = str(payload.get("direct_response") or "").strip()
+        if direct_response:
+            workflow.final_response = direct_response
+            self._transition(workflow, WorkflowState.COMPLETED)
+            return
+        raw_steps = payload.get("steps", [])
+        if raw_steps:
+            self._apply_plan(workflow, payload, raw_steps)
+            self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
+            return
+        # Old/custom planner responses may still return intent only.
         self._transition(workflow, WorkflowState.PLANNING)
 
     def _retrieve_memory(self, workflow: WorkflowRecord) -> None:
@@ -333,6 +357,18 @@ class PlannerAgent:
         raw_steps = payload.get("steps", [])
         if not raw_steps:
             raise ValueError("Planner returned no executable steps.")
+        self._apply_plan(workflow, payload, raw_steps)
+        self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
+
+    def _apply_plan(
+        self, workflow: WorkflowRecord, payload: Dict[str, Any],
+        raw_steps: List[Dict[str, Any]],
+    ) -> None:
+        """Materialise a planner decision without another model round trip."""
+        metadata = next(
+            (item for item in reversed(workflow.errors)
+             if item.get("kind") == "intent_metadata"), {}
+        )
         plan_id = uuid.uuid4().hex
         steps = self._parse_steps(raw_steps[:self.max_steps])
         now = utc_now()
@@ -347,7 +383,6 @@ class PlannerAgent:
             logger, "planner.plan.created", workflow_id=workflow.id,
             plan=workflow.plan, raw_planner_decision=payload,
         )
-        self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
 
     def _select_step(self, workflow: WorkflowRecord) -> None:
         plan = self._require_plan(workflow)
@@ -408,6 +443,7 @@ class PlannerAgent:
                 validation_criteria=step.validation_criteria,
                 relevant_context=relevant, constraints=plan.constraints,
                 idempotency_key=f"{workflow.id}:{plan.id}:{step.id}",
+                tool_name=step.tool_name, tool_args=step.tool_args,
             )
             result = self.executor.execute_step(request)
             workflow.executor_results.append(result)
@@ -542,6 +578,15 @@ class PlannerAgent:
 
     def _build_final_response(self, workflow: WorkflowRecord) -> str:
         plan = self._require_plan(workflow)
+        if os.getenv("PIPEGENT_SYNTHESIZE_FINAL_RESPONSE", "false").casefold() not in {
+            "1", "true", "yes", "on",
+        }:
+            final_response = self._format_results(plan, workflow.executor_results)
+            log_event(
+                logger, "planner.final_response.formatted", workflow_id=workflow.id,
+                plan_id=plan.id, response=final_response,
+            )
+            return final_response
         response = logged_chat_completion(
             client=self.client, target=logger, component="planner",
             purpose="build_final_response", model=self.planner_model,
@@ -568,6 +613,44 @@ class PlannerAgent:
             plan_id=plan.id, response=final_response,
         )
         return final_response
+
+    @staticmethod
+    def _format_results(plan: ExecutionPlan, results: List[Any]) -> str:
+        """Render tool outputs locally; model synthesis is optional, not mandatory."""
+        by_step = {result.step_id: result for result in results}
+
+        def render(value: Any) -> str:
+            if isinstance(value, str):
+                return value.strip()
+            if value is None:
+                return "Completed."
+            if isinstance(value, (bool, int, float)):
+                return str(value)
+            if isinstance(value, dict):
+                lines = []
+                for key, item in value.items():
+                    label = str(key).replace("_", " ").strip().capitalize()
+                    rendered = (
+                        json.dumps(item, ensure_ascii=False, default=str)
+                        if isinstance(item, (dict, list)) else str(item)
+                    )
+                    lines.append(f"{label}: {rendered}")
+                return "\n".join(lines)
+            return json.dumps(value, ensure_ascii=False, default=str)
+
+        sections = []
+        for step in sorted(plan.steps, key=lambda item: item.sequence):
+            result = by_step.get(step.id)
+            if result is None:
+                continue
+            body = render(result.output if result.output is not None else result.summary)
+            if len(plan.steps) == 1 and isinstance(result.output, (bool, int, float)):
+                sections.append(f"{step.title}: {body}")
+            elif len(plan.steps) == 1 or isinstance(result.output, str):
+                sections.append(body)
+            else:
+                sections.append(f"{step.title}:\n{body}")
+        return "\n\n".join(sections).strip() or "Completed."
 
     def _planner_json(
         self, instruction: str, payload: Dict[str, Any], *, purpose: str,
@@ -618,6 +701,8 @@ class PlannerAgent:
                 ],
                 dependencies=[str(item) for item in raw.get("dependencies", [])],
                 max_retries=max(0, int(raw.get("max_retries", 2))),
+                tool_name=(str(raw.get("tool")).strip() if raw.get("tool") else None),
+                tool_args=(dict(raw.get("args")) if isinstance(raw.get("args"), dict) else {}),
             ))
         return steps
 
@@ -648,13 +733,31 @@ class PlannerAgent:
 
     def _tool_summary(self) -> List[Dict[str, Any]]:
         return [
-            {"name": item.get("name"), "description": item.get("description")}
+            {
+                "name": item.get("name"),
+                "description": item.get("description"),
+                "input_schema": self._compact_schema(item.get("input_schema", {})),
+            }
             for item in self.tool_specs
+            if item.get("name") != "speech"
         ]
+
+    @classmethod
+    def _compact_schema(cls, value: Any) -> Any:
+        """Keep routing constraints while dropping verbose schema prose."""
+        if isinstance(value, dict):
+            return {
+                key: cls._compact_schema(item)
+                for key, item in value.items()
+                if key not in {"description", "title", "examples", "default"}
+            }
+        if isinstance(value, list):
+            return [cls._compact_schema(item) for item in value]
+        return value
 
     def _recent_session_context(
         self, session_id: str, *, exclude_workflow_id: Optional[str] = None,
-        max_messages: int = 20,
+        max_messages: int = 8, max_characters: int = 6000,
     ) -> List[Dict[str, str]]:
         """Carry successful conversation context across workflow boundaries."""
         finder = getattr(self.repository, "find_latest_completed_by_session", None)
@@ -666,22 +769,59 @@ class PlannerAgent:
         if previous is None:
             return []
         context = [
-            {"role": item["role"], "content": item["content"]}
+            {
+                "role": item["role"],
+                "content": (
+                    display_message(item["content"])
+                    if item["role"] == "assistant" else item["content"]
+                ),
+            }
             for item in previous.conversation
             if item.get("role") in {"user", "assistant"}
             and isinstance(item.get("content"), str)
         ]
         if previous.final_response:
             context.append({
-                "role": "assistant", "content": previous.final_response,
+                "role": "assistant",
+                "content": display_message(previous.final_response),
             })
-        carried = context[-max(1, max_messages):]
+        # Completed workflows already contain context inherited from their
+        # predecessor. Retain only unique recent turns so repeated questions
+        # do not grow every subsequent model request.
+        carried_reversed: List[Dict[str, str]] = []
+        seen = set()
+        used = 0
+        for item in reversed(context):
+            signature = (item["role"], item["content"].strip())
+            if not signature[1] or signature in seen:
+                continue
+            item_size = len(signature[1])
+            if carried_reversed and used + item_size > max_characters:
+                continue
+            seen.add(signature)
+            carried_reversed.append({"role": signature[0], "content": signature[1]})
+            used += item_size
+            if len(carried_reversed) >= max(1, max_messages):
+                break
+        carried = list(reversed(carried_reversed))
         log_event(
             logger, "planner.session_context.loaded",
             session_id=session_id, source_workflow_id=previous.id,
             message_count=len(carried), context=carried,
         )
         return carried
+
+    @staticmethod
+    def _handle_local_response(text: str) -> Optional[str]:
+        """Answer context-free social turns without starting a workflow."""
+        stripped = text.strip()
+        if re.fullmatch(r"(?is)(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!. ]*", stripped):
+            return "Hello! How can I help?"
+        if re.fullmatch(r"(?is)(?:thanks|thank\s+you|cheers)[!. ]*", stripped):
+            return "You're welcome."
+        if re.fullmatch(r"(?is)(?:accept|accepted|ok|okay|got\s+it)[!. ]*", stripped):
+            return "Got it."
+        return None
 
     def _add_recent_session_context(self, workflow: WorkflowRecord) -> None:
         context = self._recent_session_context(

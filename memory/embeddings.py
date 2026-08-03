@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from threading import Lock
 from typing import List, Protocol, Sequence
 
 
@@ -27,6 +28,7 @@ class SentenceTransformerEmbeddingProvider:
         self.max_characters = max_characters
         self.local_files_only = local_files_only
         self._model = None
+        self._load_lock = Lock()
         self._dimensions = 384 if model_name.endswith("all-MiniLM-L6-v2") else None
 
     @property
@@ -41,22 +43,26 @@ class SentenceTransformerEmbeddingProvider:
 
     def _load(self):
         if self._model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-            except ImportError as exc:
-                raise RuntimeError(
-                    "sentence-transformers is not installed; install project requirements"
-                ) from exc
-            try:
-                self._model = SentenceTransformer(
-                    self._model_name, device=self.device,
-                    local_files_only=self.local_files_only,
-                )
-                self._dimensions = self._model.get_sentence_embedding_dimension()
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Unable to load local embedding model {self._model_name!r}: {exc}"
-                ) from exc
+            with self._load_lock:
+                if self._model is not None:
+                    return self._model
+                try:
+                    from sentence_transformers import SentenceTransformer
+                except ImportError as exc:
+                    raise RuntimeError(
+                        "sentence-transformers is not installed; install project requirements"
+                    ) from exc
+                try:
+                    model = SentenceTransformer(
+                        self._model_name, device=self.device,
+                        local_files_only=self.local_files_only,
+                    )
+                    self._dimensions = model.get_sentence_embedding_dimension()
+                    self._model = model
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Unable to load local embedding model {self._model_name!r}: {exc}"
+                    ) from exc
         return self._model
 
     def warm_up(self) -> None:

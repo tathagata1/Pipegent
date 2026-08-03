@@ -109,14 +109,16 @@ The explicit states are `RETRIEVING_MEMORY`, `VALIDATING_RETRIEVED_CONTEXT`,
 and `CANCELLED`.
 The state machine rejects invalid transitions.
 
-The Planner carries recent successful context across workflows in the same session and
-retrieves relevant memory before asking focused clarification questions. Once sufficiently
-clear, it persists a structured `ExecutionPlan` and
-dispatches only its current step. The Executor receives an `ExecutorStepRequest`
+The Planner carries a bounded, de-duplicated slice of successful context across workflows in
+the same session and retrieves relevant memory before asking focused clarification questions.
+Intent analysis and plan creation happen in one model call. Once sufficiently clear, the
+Planner persists a structured `ExecutionPlan` with the selected tool and explicit arguments,
+then dispatches only its current step. The Executor receives an `ExecutorStepRequest`
 with minimum relevant dependency results and returns an `ExecutorStepResult`
 containing evidence, errors, and discovered facts. The Planner validates the
 evidence independently, then completes, retries, re-plans, blocks, or fails the
-step. Stable per-step idempotency keys and persisted results prevent completed
+step. Plans saved by older versions without a selected tool still use the legacy Executor
+model-routing fallback. Stable per-step idempotency keys and persisted results prevent completed
 invocations from being dispatched again during normal resume. API callers can
 also pass a stable `request_id` to `PlannerAgent.handle_request()` to deduplicate
 whole workflow submissions.
@@ -171,7 +173,7 @@ trace includes:
   answer construction) plus every workflow state transition;
 - selected tools, redacted arguments, outputs, duration, timeouts, retries, and failures;
 - memory requests, retrieved context, policy decisions, results, and indexing failures; and
-- plugin discovery and the generated executor system prompt.
+- plugin discovery and the generated executor system-prompt size.
 
 Events are emitted as single-line JSON after the timestamp/logger prefix, making the file
 readable with a text editor and searchable by event name (for example `llm.request`,
@@ -191,9 +193,16 @@ Logging can be tuned with:
 - `PIPEGENT_LOG_MAX_BYTES` (`10485760`; `0` disables rotation); and
 - `PIPEGENT_LOG_BACKUP_COUNT` (`3`).
 
-The console stays minimal (`You:`, `thinking...`, `Agent:`). If the model returns a structured
-final JSON object, only its `message` is displayed; the complete payload remains available in
-the verbose log and persisted workflow.
+The console stays minimal (`You:`, `thinking...`, `Agent:`). If an older model response returns
+structured final JSON, its `message`, `final_answer`, or `final_message` value is displayed; the
+complete payload remains available in the verbose log and persisted workflow.
+
+For GPT-5-family models, orchestration defaults to `minimal` reasoning effort and `low`
+verbosity. Override these with `PIPEGENT_REASONING_EFFORT` and
+`PIPEGENT_RESPONSE_VERBOSITY`. Final tool results are formatted locally by default, avoiding a
+separate response-synthesis model call; set `PIPEGENT_SYNTHESIZE_FINAL_RESPONSE=true` if a more
+polished model-written final answer is worth the added latency. The local embedding model warms
+in a background thread so the prompt becomes available without waiting for model startup.
 
 ## Working with User Files
 - Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.

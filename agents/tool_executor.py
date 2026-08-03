@@ -74,18 +74,33 @@ class ExecutorAgent:
         )
         step_started = perf_counter()
         try:
-            response = logged_chat_completion(
-                client=self.client, target=logger, component="executor",
-                purpose="select_tool", model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": json.dumps(request.__dict__)},
-                ],
-                temperature=self.temperature,
-                context={"plan_id": request.plan_id, "step_id": request.step_id},
-            )
-            content = (response.choices[0].message.content or "").strip()
-            tool_call = json.loads(content)
+            if request.tool_name:
+                tool_call = {
+                    "tool": request.tool_name,
+                    "args": dict(request.tool_args),
+                    "reason": "Preselected by the planner.",
+                }
+                content = json.dumps(tool_call, ensure_ascii=False)
+                log_event(
+                    logger, "executor.tool.preselected", plan_id=request.plan_id,
+                    step_id=request.step_id, tool=request.tool_name,
+                    arguments=request.tool_args,
+                )
+            else:
+                # Backward-compatible routing for persisted plans created before
+                # planners began supplying a validated tool name and arguments.
+                response = logged_chat_completion(
+                    client=self.client, target=logger, component="executor",
+                    purpose="select_tool", model=self.model,
+                    messages=[
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": json.dumps(request.__dict__)},
+                    ],
+                    temperature=self.temperature,
+                    context={"plan_id": request.plan_id, "step_id": request.step_id},
+                )
+                content = (response.choices[0].message.content or "").strip()
+                tool_call = json.loads(content)
             if not isinstance(tool_call, dict) or not isinstance(tool_call.get("tool"), str):
                 raise ValueError("Executor did not select a tool.")
             tool_name = tool_call["tool"]

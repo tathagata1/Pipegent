@@ -3,6 +3,8 @@ import os
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from threading import Thread
+from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from openai import OpenAI
@@ -110,9 +112,6 @@ def create_agent() -> PlannerAgent:
                 embedding_model, embedding_device, embedding_batch_size,
                 local_files_only=embedding_local_files_only,
             )
-            # Fail or finish model loading before accepting user input. This keeps
-            # the first ordinary question from blocking inside memory retrieval.
-            embeddings.warm_up()
             memory_repository = MemoryRepository(
                 Path(__file__).parent / "data" / "memory.sqlite3"
             )
@@ -135,7 +134,25 @@ def create_agent() -> PlannerAgent:
                 context_builder=RetrievalContextBuilder(
                     max_items=memory_max_context_items
                 ),
+                reconcile_on_startup=False,
+                initialise_on_startup=False,
             )
+            def warm_embeddings() -> None:
+                started = perf_counter()
+                try:
+                    embeddings.warm_up()
+                    memory_service.prepare()
+                    log_event(
+                        logger, "memory.embeddings.ready", level=logging.INFO,
+                        elapsed_ms=round((perf_counter() - started) * 1000, 2),
+                        model=embedding_model,
+                    )
+                except Exception:
+                    logger.exception("Background embedding warm-up failed")
+
+            Thread(
+                target=warm_embeddings, name="embedding-warmup", daemon=True,
+            ).start()
             memory_tools, memory_specs = build_memory_tools(
                 memory_service, tenant_id="default", user_id="default"
             )
@@ -156,7 +173,7 @@ def create_agent() -> PlannerAgent:
         max_steps=max_steps, max_replans=max_replans,
         memory_enabled=memory_service is not None,
         tools=[item.get("name") for item in tool_specs],
-        executor_system_prompt=system_prompt,
+        executor_system_prompt_chars=len(system_prompt),
     )
     executor = ToolExecutor(
         client=client,

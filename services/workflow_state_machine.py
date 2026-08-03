@@ -11,7 +11,8 @@ class WorkflowStateMachine:
     TRANSITIONS: Dict[WorkflowState, FrozenSet[WorkflowState]] = {
         WorkflowState.UNDERSTANDING_INTENT: frozenset({
             WorkflowState.RETRIEVING_MEMORY, WorkflowState.AWAITING_CLARIFICATION,
-            WorkflowState.PLANNING,
+            WorkflowState.PLANNING, WorkflowState.READY_TO_EXECUTE,
+            WorkflowState.COMPLETED,
             WorkflowState.BLOCKED, WorkflowState.FAILED, WorkflowState.CANCELLED,
         }),
         WorkflowState.RETRIEVING_MEMORY: frozenset({

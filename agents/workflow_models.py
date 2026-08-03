@@ -63,6 +63,8 @@ class PlanStep:
     status: StepStatus = StepStatus.PENDING
     retry_count: int = 0
     max_retries: int = 2
+    tool_name: Optional[str] = None
+    tool_args: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "PlanStep":
@@ -116,6 +118,8 @@ class ExecutorStepRequest:
     relevant_context: Dict[str, Any]
     constraints: List[str]
     idempotency_key: str
+    tool_name: Optional[str] = None
+    tool_args: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

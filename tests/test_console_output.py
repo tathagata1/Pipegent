@@ -24,6 +24,12 @@ class ConsoleOutputTests(unittest.TestCase):
     def test_plain_text_reply_is_unchanged(self):
         self.assertEqual(display_message("  A plain answer.  "), "A plain answer.")
 
+    def test_legacy_final_answer_is_extracted(self):
+        self.assertEqual(
+            display_message('{"final_answer":"Done.","completed_outputs":[]}'),
+            "Done.",
+        )
+
     def test_json_without_message_is_unchanged(self):
         reply = '{"completed_outputs":["Done"]}'
 

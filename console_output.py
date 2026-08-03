@@ -21,7 +21,8 @@ def display_message(reply: Any) -> str:
     except (json.JSONDecodeError, TypeError):
         return text
     if isinstance(payload, dict):
-        message = payload.get("message")
-        if isinstance(message, str) and message.strip():
-            return message.strip()
+        for key in ("message", "final_answer", "final_message"):
+            message = payload.get(key)
+            if isinstance(message, str) and message.strip():
+                return message.strip()
     return text

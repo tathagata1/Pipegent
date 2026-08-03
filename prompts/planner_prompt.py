@@ -16,13 +16,20 @@ summary describing the observable basis for the choice; never provide private ch
 INTENT_SCHEMA = """Return:
 {"needs_clarification": boolean, "questions": [string], "objective": string,
  "assumptions": [string], "constraints": [string], "success_criteria": [string],
- "decision_summary": string}"""
+ "decision_summary": string, "direct_response": string|null,
+ "strategy": string, "steps": [step objects]}
+If the request can be answered from the conversation or retrieved memory without a tool,
+put the concise user-facing answer in direct_response and return no steps. Otherwise set
+direct_response to null and create only the tool operations needed to produce new information.
+Never create steps that merely analyse the conversation, confirm a previous answer, or call
+the speech tool."""
 
 PLAN_SCHEMA = """Return:
 {"strategy": string, "steps": [{"id": "step-1", "sequence": 1, "title": string, "description": string,
 "expected_outcome": string, "validation_criteria": [string], "dependencies": [string],
-"max_retries": integer}]}
-Each step must be executable independently and map to at most one tool invocation."""
+"max_retries": integer, "tool": string, "args": object}]}
+Each step must map to exactly one available tool invocation. Supply its validated tool name and
+arguments directly. Never use speech for response composition or create analysis-only steps."""
 
 REPLAN_SCHEMA = """Return:
 {"reason": string, "action": "retry|revise|insert|skip|block|fail",

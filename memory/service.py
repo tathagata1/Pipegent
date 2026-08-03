@@ -6,6 +6,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from time import perf_counter
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +32,7 @@ class MemoryService:
         retriever: Optional[MemoryRetriever] = None,
         context_builder: Optional[RetrievalContextBuilder] = None,
         reconcile_on_startup: bool = True,
+        initialise_on_startup: bool = True,
     ) -> None:
         self.repository, self.embeddings, self.vector_store = (
             repository, embeddings, vector_store
@@ -41,19 +43,28 @@ class MemoryService:
         )
         self.context_builder = context_builder or RetrievalContextBuilder()
         self._vector_store_ready = False
-        try:
-            self._ensure_vector_store()
-        except Exception:
-            # SQLite is the canonical store. Keep memory available when the
-            # replaceable vector index starts late, and reconnect on demand.
-            logger.exception("vector_store_startup_unavailable")
+        self._vector_store_lock = Lock()
+        if initialise_on_startup:
+            try:
+                self._ensure_vector_store()
+            except Exception:
+                # SQLite is the canonical store. Keep memory available when the
+                # replaceable vector index starts late, and reconnect on demand.
+                logger.exception("vector_store_startup_unavailable")
         if reconcile_on_startup and self._vector_store_ready:
             self._reconcile_pending()
 
     def _ensure_vector_store(self) -> None:
         if not self._vector_store_ready:
-            self.vector_store.initialise()
-            self._vector_store_ready = True
+            with self._vector_store_lock:
+                if not self._vector_store_ready:
+                    self.vector_store.initialise()
+                    self._vector_store_ready = True
+
+    def prepare(self) -> None:
+        """Initialise replaceable memory dependencies and repair pending records."""
+        self._ensure_vector_store()
+        self._reconcile_pending()
 
     def execute(self, request: MemoryOperationRequest) -> MemoryOperationResult:
         started = perf_counter()

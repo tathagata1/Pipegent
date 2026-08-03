@@ -133,6 +133,16 @@ def logged_chat_completion(
     **request_options: Any,
 ) -> Any:
     """Call Chat Completions and emit detailed request/response trace events."""
+    if model.casefold().startswith("gpt-5"):
+        # GPT-5 reasoning tokens dominated the observed latency for short JSON
+        # routing decisions. Keep this configurable while choosing the fastest
+        # supported setting for routine agent orchestration.
+        request_options.setdefault(
+            "reasoning_effort", os.getenv("PIPEGENT_REASONING_EFFORT", "minimal")
+        )
+        request_options.setdefault(
+            "verbosity", os.getenv("PIPEGENT_RESPONSE_VERBOSITY", "low")
+        )
     call_id = uuid.uuid4().hex
     trace_context = context or {}
     log_event(
