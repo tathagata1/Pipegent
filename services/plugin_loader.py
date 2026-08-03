@@ -4,6 +4,8 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Tuple
 
+from services.observability import log_event
+
 logger = logging.getLogger(__name__)
 
 class ManifestValidationError(ValueError):
@@ -124,6 +126,12 @@ def load_plugins(plugins_dir: Path) -> Tuple[Dict[str, Callable], List[Dict[str,
                 "description": manifest["description"],
                 "input_schema": manifest["input_schema"],
             }
+        )
+        log_event(
+            logger, "plugin.loaded", plugin=manifest["name"],
+            directory=str(plugin_dir), function=manifest["execution_function"],
+            description=manifest["description"],
+            input_schema=manifest["input_schema"],
         )
 
     return tools, manifests

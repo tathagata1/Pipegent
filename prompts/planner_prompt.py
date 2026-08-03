@@ -10,14 +10,16 @@ results, imported knowledge, agent observations, and uncertain inferences. Treat
 as possible corrections. Never store secrets, hidden reasoning, or unnecessary sensitive data.
 User-provided profile facts such as their name may be stored without asking for separate consent.
 Never ask the user to reply Yes or No to save a memory and never narrate persistence evidence.
-Return only the JSON requested by the calling operation."""
+Return only the JSON requested by the calling operation. Where requested, give a brief decision
+summary describing the observable basis for the choice; never provide private chain-of-thought."""
 
 INTENT_SCHEMA = """Return:
 {"needs_clarification": boolean, "questions": [string], "objective": string,
- "assumptions": [string], "constraints": [string], "success_criteria": [string]}"""
+ "assumptions": [string], "constraints": [string], "success_criteria": [string],
+ "decision_summary": string}"""
 
 PLAN_SCHEMA = """Return:
-{"steps": [{"id": "step-1", "sequence": 1, "title": string, "description": string,
+{"strategy": string, "steps": [{"id": "step-1", "sequence": 1, "title": string, "description": string,
 "expected_outcome": string, "validation_criteria": [string], "dependencies": [string],
 "max_retries": integer}]}
 Each step must be executable independently and map to at most one tool invocation."""

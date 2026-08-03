@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -23,6 +24,7 @@ from config import (
 from agents import PlannerAgent, ToolExecutor
 from prompts import build_system_prompt
 from services import JsonPlanRepository, load_plugins
+from services.observability import log_event
 from memory.embeddings import SentenceTransformerEmbeddingProvider
 from memory.repository import MemoryRepository
 from memory.retrieval import MemoryRetriever, RetrievalContextBuilder
@@ -43,15 +45,45 @@ def configure_logging() -> Path:
     logs_dir = Path(__file__).parent / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
     log_file = logs_dir / f"pipegent_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    level_name = os.getenv("PIPEGENT_LOG_LEVEL", "DEBUG").upper()
+    file_level = getattr(logging, level_name, logging.DEBUG)
+    try:
+        max_bytes = max(0, int(os.getenv("PIPEGENT_LOG_MAX_BYTES", "10485760")))
+        backup_count = max(0, int(os.getenv("PIPEGENT_LOG_BACKUP_COUNT", "3")))
+    except ValueError:
+        max_bytes, backup_count = 10485760, 3
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    file_handler.setLevel(file_level)
+    handlers: List[logging.Handler] = [file_handler]
+    if os.getenv("PIPEGENT_LOG_TO_CONSOLE", "false").lower() in {
+        "1", "true", "yes", "on",
+    }:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(file_level)
+        handlers.append(console_handler)
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-        handlers=[logging.FileHandler(log_file, encoding="utf-8")],
+        level=file_level,
+        format=(
+            "%(asctime)s.%(msecs)03d [%(levelname)s] [%(threadName)s] "
+            "%(name)s - %(message)s"
+        ),
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=handlers,
         force=True,
     )
     logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     _LOG_FILE = log_file
-    logger.info("Logging initialized at %s", log_file)
+    log_event(
+        logger, "logging.initialized", level=logging.INFO,
+        log_file=str(log_file), file_level=logging.getLevelName(file_level),
+        console_enabled=len(handlers) > 1, max_bytes=max_bytes,
+        backup_count=backup_count,
+        max_value_chars=os.getenv("PIPEGENT_LOG_MAX_VALUE_CHARS", "50000"),
+    )
     return log_file
 
 
@@ -115,6 +147,16 @@ def create_agent() -> PlannerAgent:
             )
 
     system_prompt = build_system_prompt(tool_specs)
+    log_event(
+        logger, "agent.configuration", planner_model=planner_model,
+        planner_temperature=planner_temperature, executor_model=executor_model,
+        executor_temperature=executor_temperature,
+        executor_timeout_seconds=executor_timeout_seconds,
+        max_steps=max_steps, max_replans=max_replans,
+        memory_enabled=memory_service is not None,
+        tools=[item.get("name") for item in tool_specs],
+        executor_system_prompt=system_prompt,
+    )
     executor = ToolExecutor(
         client=client,
         tools=tools,
@@ -165,8 +207,9 @@ def _load_all_plugins(plugin_dirs: List[Path]) -> Tuple[Dict[str, Callable[..., 
 
 
 def main() -> None:
-    configure_logging()
+    log_file = configure_logging()
     print("Initializing Pipegent...")
+    print(f"Detailed log: {log_file}")
     agent = create_agent()
 
     while True:
@@ -185,10 +228,16 @@ def main() -> None:
             continue
 
         print("thinking...")
-        logger.info("User input: %s", user_input)
-        reply = agent.handle_request(user_input)
+        logger.info("Console request received characters=%s", len(user_input))
+        log_event(logger, "console.user_input", content=user_input)
+        try:
+            reply = agent.handle_request(user_input)
+        except Exception as exc:
+            logger.exception("Unhandled request failure")
+            reply = f"The task failed unexpectedly: {exc}"
         print("Agent:", reply)
-        logger.info("Agent response: %s", reply)
+        logger.info("Console response produced characters=%s", len(reply))
+        log_event(logger, "console.agent_response", content=reply)
 
 
 if __name__ == "__main__":

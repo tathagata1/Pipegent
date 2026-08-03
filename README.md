@@ -161,8 +161,38 @@ Pipegent now ships with a broad starter suite so most automation tasks can be ha
 > Optional dependencies: install `openpyxl`, `xlrd`, `python-docx`, `python-pptx`, `pillow`, and `pytesseract` (plus the native Tesseract binary) to unlock spreadsheet/Office/OCR tooling.
 
 ## Logging & Telemetry
-- Every run generates `logs/pipegent_<timestamp>.log` with INFO-level summaries and DEBUG traces of planner/executor/tool activity. Console output stays minimal (`You:`, `thinking...`, `Agent:`) to emphasize the user dialogue.
-- `data/tempstore/` continues to hold intermediate artifacts across steps; filenames are referenced inside logs for easier troubleshooting.
+
+Every run prints the path to a new `logs/pipegent_<timestamp>.log`. The default `DEBUG`
+trace includes:
+
+- model call IDs, purpose, model, full request messages, raw responses, finish reasons,
+  token usage, latency, and errors;
+- observable planner decisions (intent, assumptions, plans, re-plans, validation, and final
+  answer construction) plus every workflow state transition;
+- selected tools, redacted arguments, outputs, duration, timeouts, retries, and failures;
+- memory requests, retrieved context, policy decisions, results, and indexing failures; and
+- plugin discovery and the generated executor system prompt.
+
+Events are emitted as single-line JSON after the timestamp/logger prefix, making the file
+readable with a text editor and searchable by event name (for example `llm.request`,
+`tool.result`, or `workflow.transition`). Known credential fields such as API keys,
+authorization headers, passwords, and access tokens are replaced with `[REDACTED]`.
+
+The trace contains user prompts, retrieved memories, and tool data, so treat log files as
+sensitive. It records all reasoning artifacts Pipegent can observe, but model APIs do not
+expose private chain-of-thought. Plans, decisions, tool selections, and final outputs are the
+available explanation of model behaviour.
+
+Logging can be tuned with:
+
+- `PIPEGENT_LOG_LEVEL` (`DEBUG` by default; use `INFO` for summaries only);
+- `PIPEGENT_LOG_TO_CONSOLE` (`false` by default);
+- `PIPEGENT_LOG_MAX_VALUE_CHARS` (`50000`; `0` disables per-value truncation);
+- `PIPEGENT_LOG_MAX_BYTES` (`10485760`; `0` disables rotation); and
+- `PIPEGENT_LOG_BACKUP_COUNT` (`3`).
+
+The console stays minimal (`You:`, `thinking...`, `Agent:`). `data/tempstore/` continues to
+hold intermediate artifacts across steps; filenames are referenced inside logs.
 
 ## Working with User Files
 - Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.

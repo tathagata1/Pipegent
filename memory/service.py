@@ -6,6 +6,7 @@ import uuid
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 from memory.domain import (
@@ -18,6 +19,7 @@ from memory.policy import MemoryPolicyEngine
 from memory.repository import MemoryRepository
 from memory.retrieval import MemoryRetriever, RetrievalContextBuilder
 from memory.vector_store import VectorRecord, VectorStore
+from services.observability import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +56,17 @@ class MemoryService:
             self._vector_store_ready = True
 
     def execute(self, request: MemoryOperationRequest) -> MemoryOperationResult:
+        started = perf_counter()
+        log_event(
+            logger, "memory.operation.request", operation_id=request.operation_id,
+            action=request.action, request=request,
+        )
         cached = self.repository.begin_operation(
             request.operation_id, request.idempotency_key, request.tenant_id,
             request.user_id, request.action.value,
         )
         if cached:
-            return MemoryOperationResult(
+            result = MemoryOperationResult(
                 operation_id=request.operation_id, action=request.action,
                 status=cached.get("status", "success"),
                 created_memory_id=cached.get("created_memory_id"),
@@ -68,6 +75,12 @@ class MemoryService:
                 evidence=cached.get("evidence", []), warnings=cached.get("warnings", []),
                 errors=cached.get("errors", []),
             )
+            log_event(
+                logger, "memory.operation.cached", operation_id=request.operation_id,
+                action=request.action, result=result,
+                elapsed_ms=round((perf_counter() - started) * 1000, 2),
+            )
+            return result
         try:
             if request.action == MemoryAction.CREATE:
                 result = self._create(request)
@@ -105,6 +118,17 @@ class MemoryService:
             "evidence": result.evidence, "warnings": result.warnings,
             "errors": result.errors,
         })
+        elapsed_ms = round((perf_counter() - started) * 1000, 2)
+        log_event(
+            logger, "memory.operation.result", operation_id=request.operation_id,
+            action=request.action, status=result.status, result=result,
+            elapsed_ms=elapsed_ms,
+        )
+        logger.info(
+            "Memory operation completed operation_id=%s action=%s status=%s "
+            "elapsed_ms=%.2f",
+            request.operation_id, request.action.value, result.status, elapsed_ms,
+        )
         return result
 
     def _create(self, request: MemoryOperationRequest) -> MemoryOperationResult:
@@ -132,6 +156,11 @@ class MemoryService:
             explicit_user_request=request.explicit_user_request,
             existing_conflicts=duplicates,
         ))
+        log_event(
+            logger, "memory.policy.decision", operation_id=request.operation_id,
+            candidate=request.memory, duplicate_ids=[item.id for item in duplicates],
+            decision=decision,
+        )
         if duplicates:
             duplicate = duplicates[0]
             if (

@@ -7,4 +7,5 @@ Execute memory operations only when assigned by the Planner. Never broaden memor
 tenant, user, session, or project boundaries. Do not independently store encountered information.
 Select exactly one available tool using the JSON shape requested below.
 {tools_block}
-Respond only with: {"tool": "<tool_name>", "args": {...}}"""
+Respond only with: {"tool": "<tool_name>", "reason": "<brief selection summary>",
+"args": {...}}. The reason must be concise and must not contain private chain-of-thought."""

@@ -6,6 +6,7 @@ import uuid
 import re
 from dataclasses import asdict
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Dict, List, Optional
 
 from openai import OpenAI
@@ -22,6 +23,7 @@ from prompts.planner_prompt import (
 from services.plan_repository import JsonPlanRepository
 from services.result_validator import ExecutionResultValidator
 from services.workflow_state_machine import WorkflowStateMachine
+from services.observability import log_event, logged_chat_completion
 from memory.domain import (
     MemoryAction, MemoryCandidate, MemoryOperationRequest, MemoryScope, MemorySource,
     MemoryType,
@@ -67,8 +69,29 @@ class PlannerAgent:
         request_id: Optional[str] = None,
     ) -> str:
         """Accept user input and run until clarification or a terminal state."""
+        trace_id = uuid.uuid4().hex
+        request_started = perf_counter()
+        log_event(
+            logger, "planner.request.received", level=logging.INFO,
+            trace_id=trace_id, request_id=request_id, session_id=session_id,
+            user_request_chars=len(user_request),
+        )
+        log_event(
+            logger, "planner.request.content", trace_id=trace_id,
+            session_id=session_id, user_request=user_request,
+        )
         directed = self._handle_directed_memory(user_request, session_id)
         if directed is not None:
+            log_event(
+                logger, "planner.request.directed_memory", level=logging.INFO,
+                trace_id=trace_id, session_id=session_id,
+                response_chars=len(directed),
+                elapsed_ms=round((perf_counter() - request_started) * 1000, 2),
+            )
+            log_event(
+                logger, "planner.request.directed_memory.content",
+                trace_id=trace_id, session_id=session_id, response=directed,
+            )
             return directed
         workflow = self.repository.get(request_id) if request_id else None
         if workflow and workflow.state in {
@@ -94,6 +117,11 @@ class PlannerAgent:
                 max_replans=self.max_replans,
             )
             self._save(workflow)
+            log_event(
+                logger, "workflow.created", level=logging.INFO,
+                trace_id=trace_id, workflow_id=workflow.id,
+                session_id=session_id, objective=workflow.objective,
+            )
         else:
             # Additional input while active is relevant context, not a second workflow.
             workflow.conversation.append({"role": "user", "content": user_request})
@@ -101,7 +129,18 @@ class PlannerAgent:
             self._save(workflow)
 
         try:
-            return self._drive(workflow)
+            result = self._drive(workflow)
+            log_event(
+                logger, "planner.request.completed", level=logging.INFO,
+                trace_id=trace_id, workflow_id=workflow.id,
+                final_state=workflow.state, response_chars=len(result),
+                elapsed_ms=round((perf_counter() - request_started) * 1000, 2),
+            )
+            log_event(
+                logger, "planner.request.response", trace_id=trace_id,
+                workflow_id=workflow.id, response=result,
+            )
+            return result
         except Exception as exc:
             logger.exception("Planner workflow failed workflow_id=%s", workflow.id)
             workflow.errors.append({
@@ -111,6 +150,13 @@ class PlannerAgent:
                 self._transition(workflow, WorkflowState.FAILED)
             workflow.final_response = f"The task failed: {exc}"
             self._save(workflow)
+            log_event(
+                logger, "planner.request.failed", level=logging.ERROR,
+                trace_id=trace_id, workflow_id=workflow.id,
+                state=workflow.state, error_type=type(exc).__name__,
+                error=str(exc),
+                elapsed_ms=round((perf_counter() - request_started) * 1000, 2),
+            )
             return workflow.final_response
 
     def cancel(self, session_id: str = "default") -> bool:
@@ -129,6 +175,13 @@ class PlannerAgent:
             WorkflowState.AWAITING_CLARIFICATION, WorkflowState.COMPLETED,
             WorkflowState.BLOCKED, WorkflowState.FAILED, WorkflowState.CANCELLED,
         }:
+            log_event(
+                logger, "workflow.state.processing", workflow_id=workflow.id,
+                state=workflow.state, plan_id=(workflow.plan.id if workflow.plan else None),
+                current_step_id=(
+                    workflow.plan.current_step_id if workflow.plan else None
+                ),
+            )
             if workflow.cancelled:
                 self._transition(workflow, WorkflowState.CANCELLED)
                 break
@@ -172,6 +225,11 @@ class PlannerAgent:
             "Analyse intent using the full conversation. Do not repeat answered questions.\n"
             + INTENT_SCHEMA,
             {"conversation": workflow.conversation, "available_tools": self._tool_summary()},
+            purpose="understand_intent", workflow_id=workflow.id,
+        )
+        log_event(
+            logger, "planner.intent.decision", workflow_id=workflow.id,
+            decision=payload,
         )
         workflow.objective = str(payload.get("objective") or workflow.objective)
         questions = [
@@ -219,6 +277,12 @@ class PlannerAgent:
             self.memory_service.context_builder.build(result.retrieved)
             if result.status == "success" else ""
         )
+        log_event(
+            logger, "planner.memory.retrieved", workflow_id=workflow.id,
+            operation_id=request.operation_id, query=request.query,
+            status=result.status, retrieved=result.retrieved,
+            built_context=context,
+        )
         workflow.errors = [
             item for item in workflow.errors if item.get("kind") != "retrieved_memory"
         ]
@@ -245,6 +309,7 @@ class PlannerAgent:
                     if item.get("kind") == "retrieved_memory"
                 ), ""),
             },
+            purpose="create_plan", workflow_id=workflow.id,
         )
         raw_steps = payload.get("steps", [])
         if not raw_steps:
@@ -258,6 +323,10 @@ class PlannerAgent:
             constraints=list(metadata.get("constraints", [])),
             success_criteria=list(metadata.get("success_criteria", [])),
             status=PlanStatus.ACTIVE, steps=steps, created_at=now, updated_at=now,
+        )
+        log_event(
+            logger, "planner.plan.created", workflow_id=workflow.id,
+            plan=workflow.plan, raw_planner_decision=payload,
         )
         self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
 
@@ -291,6 +360,10 @@ class PlannerAgent:
         step.status = StepStatus.IN_PROGRESS
         plan.current_step_id = step.id
         plan.updated_at = utc_now()
+        log_event(
+            logger, "planner.step.selected", workflow_id=workflow.id,
+            plan_id=plan.id, step=step,
+        )
         self._transition(workflow, WorkflowState.EXECUTING_STEP)
 
     def _execute_current_step(self, workflow: WorkflowRecord) -> None:
@@ -319,6 +392,10 @@ class PlannerAgent:
             )
             result = self.executor.execute_step(request)
             workflow.executor_results.append(result)
+            log_event(
+                logger, "planner.step.execution_received", workflow_id=workflow.id,
+                plan_id=plan.id, step_id=step.id, request=request, result=result,
+            )
             self._save(workflow)
         self._transition(workflow, WorkflowState.VALIDATING_STEP)
 
@@ -337,6 +414,11 @@ class PlannerAgent:
         logger.info(
             "Validation workflow_id=%s plan_id=%s revision=%s step_id=%s valid=%s",
             workflow.id, plan.id, plan.revision, step.id, decision.valid,
+        )
+        log_event(
+            logger, "planner.step.validation", workflow_id=workflow.id,
+            plan_id=plan.id, revision=plan.revision, step=step,
+            executor_result=result, decision=decision,
         )
         if decision.valid:
             step.status = StepStatus.COMPLETED
@@ -396,8 +478,14 @@ class PlannerAgent:
                     if item.status != StepStatus.COMPLETED
                 ],
             },
+            purpose="replan", workflow_id=workflow.id,
         )
         reason = str(payload.get("reason") or "Execution result required re-planning.")
+        log_event(
+            logger, "planner.replan.decision", workflow_id=workflow.id,
+            plan_id=plan.id, revision=plan.revision,
+            current_step_id=current.id, decision=payload,
+        )
         plan.revision_history.append(PlanRevision(
             revision=plan.revision, reason=reason, changed_at=utc_now(),
             steps_snapshot=[asdict(item) for item in plan.steps],
@@ -435,8 +523,9 @@ class PlannerAgent:
 
     def _build_final_response(self, workflow: WorkflowRecord) -> str:
         plan = self._require_plan(workflow)
-        response = self.client.chat.completions.create(
-            model=self.planner_model,
+        response = logged_chat_completion(
+            client=self.client, target=logger, component="planner",
+            purpose="build_final_response", model=self.planner_model,
             messages=[
                 {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                 {"role": "user", "content": (
@@ -450,25 +539,48 @@ class PlannerAgent:
                 )},
             ],
             temperature=self.planner_temperature,
+            context={"workflow_id": workflow.id, "plan_id": plan.id},
         )
-        return (response.choices[0].message.content or "").strip()
+        final_response = (response.choices[0].message.content or "").strip()
+        log_event(
+            logger, "planner.final_response.built", workflow_id=workflow.id,
+            plan_id=plan.id, response=final_response,
+        )
+        return final_response
 
-    def _planner_json(self, instruction: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = self.client.chat.completions.create(
-            model=self.planner_model,
+    def _planner_json(
+        self, instruction: str, payload: Dict[str, Any], *, purpose: str,
+        workflow_id: str,
+    ) -> Dict[str, Any]:
+        response = logged_chat_completion(
+            client=self.client, target=logger, component="planner",
+            purpose=purpose, model=self.planner_model,
             messages=[
                 {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                 {"role": "user", "content": instruction + "\n" +
                  json.dumps(payload, ensure_ascii=False, default=str)},
             ],
             temperature=self.planner_temperature,
+            context={"workflow_id": workflow_id},
         )
         content = (response.choices[0].message.content or "").strip()
         if content.startswith("```"):
             content = content.split("\n", 1)[1].rsplit("```", 1)[0]
-        parsed = json.loads(content)
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError as exc:
+            log_event(
+                logger, "planner.json.invalid", level=logging.WARNING,
+                workflow_id=workflow_id, purpose=purpose,
+                raw_model_output=content, error=str(exc),
+            )
+            raise
         if not isinstance(parsed, dict):
             raise ValueError("Planner response must be a JSON object.")
+        log_event(
+            logger, "planner.json.parsed", workflow_id=workflow_id,
+            purpose=purpose, parsed=parsed,
+        )
         return parsed
 
     def _parse_steps(self, raw_steps: List[Dict[str, Any]]) -> List[PlanStep]:
@@ -499,6 +611,13 @@ class PlannerAgent:
             workflow.plan.revision if workflow.plan else None,
             old.value, target.value,
             workflow.plan.current_step_id if workflow.plan else None,
+        )
+        log_event(
+            logger, "workflow.transition", workflow_id=workflow.id,
+            plan_id=workflow.plan.id if workflow.plan else None,
+            revision=workflow.plan.revision if workflow.plan else None,
+            from_state=old, to_state=target,
+            current_step_id=(workflow.plan.current_step_id if workflow.plan else None),
         )
         self._save(workflow)
 
