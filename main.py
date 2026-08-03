@@ -21,6 +21,7 @@ from config import (
     embedding_local_files_only,
     memory_max_context_items, memory_min_similarity, memory_auto_store_enabled,
 )
+from console_output import display_message
 from agents import PlannerAgent, ToolExecutor
 from prompts import build_system_prompt
 from services import JsonPlanRepository, load_plugins
@@ -235,9 +236,16 @@ def main() -> None:
         except Exception as exc:
             logger.exception("Unhandled request failure")
             reply = f"The task failed unexpectedly: {exc}"
-        print("Agent:", reply)
-        logger.info("Console response produced characters=%s", len(reply))
-        log_event(logger, "console.agent_response", content=reply)
+        displayed_reply = display_message(reply)
+        print("Agent:", displayed_reply)
+        logger.info(
+            "Console response produced raw_characters=%s displayed_characters=%s",
+            len(reply), len(displayed_reply),
+        )
+        log_event(
+            logger, "console.agent_response", raw_content=reply,
+            displayed_content=displayed_reply,
+        )
 
 
 if __name__ == "__main__":

@@ -193,8 +193,10 @@ Logging can be tuned with:
 - `PIPEGENT_LOG_MAX_BYTES` (`10485760`; `0` disables rotation); and
 - `PIPEGENT_LOG_BACKUP_COUNT` (`3`).
 
-The console stays minimal (`You:`, `thinking...`, `Agent:`). `data/tempstore/` continues to
-hold intermediate artifacts across steps; filenames are referenced inside logs.
+The console stays minimal (`You:`, `thinking...`, `Agent:`). If the model returns a structured
+final JSON object, only its `message` is displayed; the complete payload remains available in
+the verbose log and persisted workflow. `data/tempstore/` continues to hold intermediate
+artifacts across steps; filenames are referenced inside logs.
 
 ## Working with User Files
 - Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.

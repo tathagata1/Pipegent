@@ -547,8 +547,10 @@ class PlannerAgent:
             messages=[
                 {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                 {"role": "user", "content": (
-                    "Write the concise final user-facing answer. Mention completed outputs "
-                    "and material skipped work or limitations. Do not expose internal messages.\n"
+                    "Write only the concise final user-facing answer as plain text. "
+                    "Do not return JSON, labels, metadata, completed-output lists, or a "
+                    "decision summary. Mention a limitation only when it materially affects "
+                    "the answer. Do not expose internal messages.\n"
                     + json.dumps({
                         "objective": plan.objective,
                         "steps": [asdict(item) for item in plan.steps],
