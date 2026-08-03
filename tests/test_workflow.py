@@ -69,6 +69,16 @@ class ScriptedExecutor:
         return result
 
 
+class MemoryRecordingExecutor(ScriptedExecutor):
+    def __init__(self):
+        super().__init__()
+        self.memory_requests = []
+
+    def execute_memory_operation(self, request):
+        self.memory_requests.append(request)
+        return SimpleNamespace(status="success", evidence=[])
+
+
 INTENT = json.dumps({
     "needs_clarification": False, "questions": [], "objective": "do it",
     "assumptions": [], "constraints": [], "success_criteria": ["done"],
@@ -120,6 +130,21 @@ class WorkflowTests(unittest.TestCase):
         agent = self.agent([CLARIFY])
         self.assertIn("Which file", agent.handle_request("process it"))
         self.assertEqual(self.latest(agent).state, WorkflowState.AWAITING_CLARIFICATION)
+
+    def test_user_name_is_saved_without_confirmation_or_model_call(self):
+        executor = MemoryRecordingExecutor()
+        agent = PlannerAgent(
+            client=FakeClient([]), executor=executor, tool_specs=[],
+            planner_model="fake", planner_temperature=0, max_steps=5,
+            temp_dir=self.root, repository=JsonPlanRepository(self.root / "state"),
+            memory_service=object(),
+        )
+
+        reply = agent.handle_request("My name is Tatha")
+
+        self.assertEqual(reply, "Nice to meet you, Tatha.")
+        self.assertEqual(len(executor.memory_requests), 1)
+        self.assertEqual(executor.memory_requests[0].memory.content, "My name is Tatha.")
 
     def test_02_answered_context_is_not_asked_again(self):
         agent = self.agent([CLARIFY, INTENT, plan(), "Finished"])

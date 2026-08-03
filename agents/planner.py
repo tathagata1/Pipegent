@@ -530,6 +530,27 @@ class PlannerAgent:
             r"(?is)^(?:please\s+)?(?:remember|save|learn)\b", stripped
         ):
             return "Memory is disabled for this conversation, so I did not store that."
+        stated_name = re.match(
+            r"(?is)^(?:my name is|i am|i'm)\s+([^.!?]+)[.!?]*$", stripped
+        )
+        if stated_name and session_id not in self._memory_disabled_sessions:
+            name = stated_name.group(1).strip()
+            result = self.executor.execute_memory_operation(MemoryOperationRequest(
+                operation_id=uuid.uuid4().hex, action=MemoryAction.CREATE,
+                tenant_id=self.tenant_id, user_id=self.user_id, agent_id=self.agent_id,
+                session_id=session_id, project_id=self.project_id,
+                memory=MemoryCandidate(
+                    content=f"My name is {name}.", proposed_type=MemoryType.USER_FACT,
+                    proposed_scope=MemoryScope.USER, source=MemorySource.USER_EXPLICIT,
+                    reason="User-provided profile fact.", confidence=1.0, importance=0.8,
+                ), explicit_user_request=True,
+                idempotency_key=(
+                    f"profile:name:{self.tenant_id}:{self.user_id}:{name.casefold()}"
+                ),
+            ))
+            if result.status in {"success", "partial_success"}:
+                return f"Nice to meet you, {name}."
+            return f"Nice to meet you, {name}."
         remember = re.match(
             r"(?is)^(?:please\s+)?(?:remember|save|learn)\s+(?:that\s+|this\s+)?(.+)$",
             stripped,

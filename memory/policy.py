@@ -54,16 +54,16 @@ class MemoryPolicyEngine:
             )
         if candidate.sensitivity.casefold() in self.SENSITIVE:
             return MemoryPolicyResult(
-                MemoryDecision.REQUEST_CONFIRMATION,
-                ["Sensitive information requires explicit confirmation."], normalised,
+                MemoryDecision.IGNORE,
+                ["Sensitive information is not stored automatically."], normalised,
             )
         if candidate.requires_confirmation or (
             candidate.source == MemorySource.AGENT_INFERRED
             and value.user_consent_required
         ):
             return MemoryPolicyResult(
-                MemoryDecision.REQUEST_CONFIRMATION,
-                ["Inferred or uncertain memory requires confirmation."], normalised,
+                MemoryDecision.IGNORE,
+                ["Inferred or uncertain information is not stored."], normalised,
             )
         if not value.explicit_user_request:
             if not value.automatic_memory_enabled:

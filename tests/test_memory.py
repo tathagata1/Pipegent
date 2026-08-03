@@ -184,7 +184,7 @@ class MemoryTests(unittest.TestCase):
             automatic_memory_enabled=True, explicit_user_request=False,
         )
         self.assertEqual(
-            policy.evaluate(sensitive).decision, MemoryDecision.REQUEST_CONFIRMATION
+            policy.evaluate(sensitive).decision, MemoryDecision.IGNORE
         )
 
     def test_inferred_fact_stays_an_observation(self):
