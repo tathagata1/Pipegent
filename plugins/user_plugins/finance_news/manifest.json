@@ -1,0 +1,16 @@
+{
+  "name": "finance_news",
+  "description": "Get normalized recent news headlines, publishers, summaries, timestamps, and links associated with a Yahoo Finance symbol.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "symbol": {"type": "string", "description": "Yahoo Finance symbol, such as NVDA, ^FTSE, or BTC-USD."},
+      "limit": {"type": "integer", "minimum": 1, "maximum": 25, "default": 8},
+      "tab": {"type": "string", "enum": ["news", "all", "press releases"], "default": "news"}
+    },
+    "required": ["symbol"],
+    "additionalProperties": false
+  },
+  "execution_function": "finance_news"
+}
+

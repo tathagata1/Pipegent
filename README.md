@@ -159,6 +159,10 @@ Pipegent now ships with a broad starter suite so most automation tasks can be ha
 - **Data fetchers** – `web_scraper`, `http_post_json`, `rss_reader`, `github_repo_fetcher`, and `email_sender` cover general HTTP GET/POST flows, feed parsing, GitHub API access, and SMTP delivery (credentials never echoed back into responses).
 - **Local integrations** – `sqlite_query` executes parameterized SQL, `table_parser` reads CSV/XLSX (requires `openpyxl`), `xlsx_writer` outputs structured workbooks, `xls_reader` handles legacy Excel files, `docx_reader`/`docx_writer` manage Word docs, and `pptx_reader`/`pptx_writer` cover slide decks (via `python-docx`/`python-pptx`).
 - **Text + utility set** – Calculator, dice/coin, speech, and string casing plugins continue to exist so legacy prompts remain compatible.
+- **Finance user plugins** – `market_quote`, `market_history`, `company_fundamentals`,
+  `technical_analysis`, `portfolio_analysis`, and `finance_news` provide Yahoo Finance market
+  data and deterministic analytics through `yfinance`. Yahoo data may be delayed and is intended
+  for personal research; plugin output is not investment advice.
 
 > Optional dependencies: install `openpyxl`, `xlrd`, `python-docx`, `python-pptx`, `pillow`, and `pytesseract` (plus the native Tesseract binary) to unlock spreadsheet/Office/OCR tooling.
 

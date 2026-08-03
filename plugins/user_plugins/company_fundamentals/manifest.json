@@ -1,0 +1,14 @@
+{
+  "name": "company_fundamentals",
+  "description": "Get a curated company profile, valuation ratios, profitability, growth, balance-sheet health, dividends, and analyst targets from Yahoo Finance. Fields unavailable for a security are returned as null.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "symbol": {"type": "string", "description": "Yahoo Finance equity symbol, for example AAPL or SHEL.L."}
+    },
+    "required": ["symbol"],
+    "additionalProperties": false
+  },
+  "execution_function": "company_fundamentals"
+}
+

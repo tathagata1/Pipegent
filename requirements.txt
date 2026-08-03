@@ -8,3 +8,4 @@ xlrd
 qdrant-client==1.16.2
 sentence-transformers>=2.7,<4
 hf_xet
+yfinance>=1.5.1,<2

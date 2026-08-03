@@ -1,0 +1,17 @@
+{
+  "name": "market_quote",
+  "description": "Get the latest available price, daily change, range, volume, market cap, and 52-week range for a stock, ETF, index, currency, or crypto symbol through yfinance. Market data may be delayed.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "symbol": {
+        "type": "string",
+        "description": "Yahoo Finance symbol, for example AAPL, VUSA.L, ^GSPC, GBPUSD=X, or BTC-USD."
+      }
+    },
+    "required": ["symbol"],
+    "additionalProperties": false
+  },
+  "execution_function": "market_quote"
+}
+

@@ -1,0 +1,19 @@
+{
+  "name": "technical_analysis",
+  "description": "Calculate moving averages, Wilder-style RSI, momentum, annualized volatility, maximum drawdown, and a simple trend classification from adjusted Yahoo Finance prices. This is descriptive analysis, not investment advice.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "symbol": {"type": "string", "description": "Yahoo Finance symbol."},
+      "period": {"type": "string", "enum": ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"], "default": "1y"},
+      "interval": {"type": "string", "enum": ["1d", "5d", "1wk", "1mo", "3mo"], "default": "1d"},
+      "short_window": {"type": "integer", "minimum": 2, "default": 20},
+      "long_window": {"type": "integer", "minimum": 3, "default": 50},
+      "rsi_window": {"type": "integer", "minimum": 2, "default": 14}
+    },
+    "required": ["symbol"],
+    "additionalProperties": false
+  },
+  "execution_function": "technical_analysis"
+}
+

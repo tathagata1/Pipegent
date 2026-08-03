@@ -1,0 +1,18 @@
+{
+  "name": "portfolio_analysis",
+  "description": "Analyze a long-only portfolio using adjusted daily Yahoo Finance prices: total and annualized return, volatility, Sharpe ratio, drawdown, asset statistics, and benchmark correlation/beta. Weights are normalized to 100%; this is descriptive analysis, not investment advice.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "symbols": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "string"}, "description": "Yahoo Finance symbols."},
+      "weights": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "number", "minimum": 0}, "description": "Optional long-only weights in the same order as symbols. They need not sum to 1 or 100."},
+      "period": {"type": "string", "enum": ["1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"], "default": "1y"},
+      "benchmark": {"type": "string", "default": "SPY", "description": "Comparison symbol. Use an empty string to omit benchmark statistics."},
+      "risk_free_rate_percent": {"type": "number", "default": 0, "description": "Annual risk-free rate as a percentage, used for the Sharpe ratio."}
+    },
+    "required": ["symbols"],
+    "additionalProperties": false
+  },
+  "execution_function": "portfolio_analysis"
+}
+
