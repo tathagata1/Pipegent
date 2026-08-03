@@ -119,8 +119,9 @@ class ExecutorAgent:
             )
             pool = ThreadPoolExecutor(max_workers=1)
             future = pool.submit(self.tools[tool_name], **args)
+            call_timeout = self._effective_timeout(args, self.timeout_seconds)
             try:
-                output = future.result(timeout=self.timeout_seconds)
+                output = future.result(timeout=call_timeout)
             except FutureTimeout:
                 future.cancel()
                 pool.shutdown(wait=False, cancel_futures=True)
@@ -129,11 +130,11 @@ class ExecutorAgent:
                     logger, "tool.timeout", level=logging.WARNING,
                     plan_id=request.plan_id, step_id=request.step_id,
                     tool=tool_name, arguments=args, elapsed_ms=elapsed_ms,
-                    timeout_seconds=self.timeout_seconds,
+                    timeout_seconds=call_timeout,
                 )
                 return self._failure(
                     request, "TOOL_TIMEOUT",
-                    f"Tool exceeded {self.timeout_seconds:g} seconds.", True,
+                    f"Tool exceeded {call_timeout:g} seconds.", True,
                 )
             else:
                 pool.shutdown(wait=True)
@@ -208,6 +209,13 @@ class ExecutorAgent:
         )
         result = self.execute_step(request)
         return str(result.output) if result.status == ExecutionResultStatus.SUCCESS else result.summary
+
+    @staticmethod
+    def _effective_timeout(args: Dict[str, Any], default: float = 60.0) -> float:
+        configured = args.get("timeout")
+        if isinstance(configured, (int, float)) and not isinstance(configured, bool):
+            return min(default, max(1.0, float(configured) + 2.0))
+        return default
 
     @staticmethod
     def _normalize_args(payload: Dict[str, Any]) -> Dict[str, Any]:

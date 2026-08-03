@@ -33,4 +33,8 @@ arguments directly. Never use speech for response composition or create analysis
 
 REPLAN_SCHEMA = """Return:
 {"reason": string, "action": "retry|revise|insert|skip|block|fail",
-"steps": [full remaining step objects only when revising or inserting]}"""
+"steps": [{"id": string, "sequence": integer, "title": string, "description": string,
+"expected_outcome": string, "validation_criteria": [string], "dependencies": [string],
+"max_retries": integer, "tool": string, "args": object}]}
+For retry, revise, or insert, return corrected steps using only available_tools. Never invent a
+tool name or return tool_name/tool_args aliases."""

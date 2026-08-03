@@ -29,7 +29,22 @@ class CountingCompletions:
         return response(self.payload)
 
 
+class QueueCompletions:
+    def __init__(self, payloads):
+        self.payloads = list(payloads)
+        self.calls = 0
+
+    def create(self, **kwargs):
+        payload = self.payloads[self.calls]
+        self.calls += 1
+        return response(payload)
+
+
 class PerformancePathTests(unittest.TestCase):
+    def test_tool_timeout_respects_the_tools_shorter_timeout(self):
+        self.assertEqual(ExecutorAgent._effective_timeout({"timeout": 15}, 60), 17)
+        self.assertEqual(ExecutorAgent._effective_timeout({"timeout": 15}, 10), 10)
+
     def test_context_free_social_turn_uses_no_model_call(self):
         completions = CountingCompletions({})
         client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
@@ -120,6 +135,71 @@ class PerformancePathTests(unittest.TestCase):
             sum(item["content"] == "what is my age" for item in context), 1
         )
         self.assertLessEqual(len(context), 8)
+
+    def test_replan_executes_corrected_step_instead_of_stale_failure(self):
+        initial = {
+            "needs_clarification": False,
+            "questions": [],
+            "objective": "Calculate age.",
+            "assumptions": [],
+            "constraints": [],
+            "success_criteria": ["Age is calculated."],
+            "decision_summary": "Use the supplied birthdate.",
+            "direct_response": None,
+            "steps": [{
+                "id": "step-1", "sequence": 1, "title": "Calculated age",
+                "description": "Calculate age.", "expected_outcome": "An age.",
+                "validation_criteria": ["Age is calculated."],
+                "dependencies": [], "max_retries": 0,
+                "tool": "age_calculator",
+                "args": {"birthdate": "1989-10-29", "fmt": "YYYY-MM-DD"},
+            }],
+        }
+        corrected = {
+            "reason": "Correct the datetime format.",
+            "action": "retry",
+            # Accept aliases emitted by older re-plan prompts and persisted plans.
+            "steps": [{
+                "id": "step-1", "sequence": 1, "title": "Calculated age",
+                "description": "Calculate age.", "expected_outcome": "An age.",
+                "validation_criteria": ["Age is calculated."],
+                "dependencies": [], "max_retries": 0,
+                "tool_name": "age_calculator",
+                "tool_args": {"birthdate": "1989-10-29", "fmt": "%Y-%m-%d"},
+            }],
+        }
+        completions = QueueCompletions([initial, corrected])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        calls = []
+
+        def age_calculator(birthdate, fmt):
+            calls.append(fmt)
+            if fmt != "%Y-%m-%d":
+                raise ValueError("invalid date format")
+            return 36
+
+        executor = ExecutorAgent(
+            client, {"age_calculator": age_calculator},
+            "legacy executor prompt", "test-model", 0,
+        )
+        tool_specs = [{
+            "name": "age_calculator", "description": "Calculate age.",
+            "input_schema": {"type": "object", "properties": {
+                "birthdate": {"type": "string"}, "fmt": {"type": "string"},
+            }, "required": ["birthdate"]},
+        }]
+
+        with tempfile.TemporaryDirectory() as directory:
+            planner = PlannerAgent(
+                client, executor, tool_specs, "test-model", 0, 3,
+                repository=JsonPlanRepository(Path(directory)),
+            )
+            with self.assertLogs("agents.tool_executor", level="WARNING"):
+                answer = planner.handle_request("Calculate my age from 1989-10-29.")
+
+        self.assertEqual(answer, "Calculated age: 36")
+        self.assertEqual(calls, ["YYYY-MM-DD", "%Y-%m-%d"])
+        self.assertEqual(completions.calls, 2)
 
 
 if __name__ == "__main__":

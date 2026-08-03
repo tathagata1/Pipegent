@@ -486,8 +486,10 @@ class PlannerAgent:
                 self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
             return
         retryable = any(error.retryable for error in result.errors)
+        timeout_failure = any(error.code == "TOOL_TIMEOUT" for error in result.errors)
+        retry_limit = min(step.max_retries, 1) if timeout_failure else step.max_retries
         if (retryable or result.status == ExecutionResultStatus.SUCCESS) and (
-            step.retry_count < step.max_retries
+            step.retry_count < retry_limit
         ):
             step.retry_count += 1
             workflow.executor_results = [
@@ -504,10 +506,20 @@ class PlannerAgent:
         plan = self._require_plan(workflow)
         if workflow.replan_count >= workflow.max_replans:
             current = self._current_step(plan)
+            latest = next((
+                item for item in reversed(workflow.executor_results)
+                if item.step_id == current.id
+            ), None)
+            last_error = (
+                latest.errors[-1].message
+                if latest is not None and latest.errors else
+                (latest.summary if latest is not None else "No executable replacement was found.")
+            )
             current.status = StepStatus.FAILED
             plan.status = PlanStatus.FAILED
             workflow.final_response = (
-                "The task failed because the maximum re-plan limit was reached."
+                f"The task could not be completed after {workflow.max_replans} re-plans. "
+                f"Last error: {last_error}"
             )
             self._transition(workflow, WorkflowState.FAILED)
             return
@@ -522,6 +534,7 @@ class PlannerAgent:
             + REPLAN_SCHEMA,
             {
                 "objective": plan.objective,
+                "available_tools": self._tool_summary(),
                 "current_step": asdict(current),
                 "result": asdict(result),
                 "completed_steps": [
@@ -564,14 +577,41 @@ class PlannerAgent:
             current.status = StepStatus.SKIPPED
         else:
             replacements = self._parse_steps(payload.get("steps", []))
+            known_tools = {
+                str(item.get("name")) for item in self.tool_specs if item.get("name")
+            }
+            unavailable = sorted({
+                item.tool_name for item in replacements
+                if item.tool_name and item.tool_name not in known_tools
+            })
+            if unavailable:
+                current.status = StepStatus.BLOCKED
+                plan.status = PlanStatus.BLOCKED
+                reason = "Re-plan selected unavailable tool(s): " + ", ".join(unavailable)
+                workflow.blockers.append(reason)
+                workflow.final_response = (
+                    "The task is blocked because no available tool could complete the "
+                    f"failed step. {reason}"
+                )
+                self._transition(workflow, WorkflowState.BLOCKED)
+                return
             completed = [item for item in plan.steps if item.status == StepStatus.COMPLETED]
             if replacements:
                 existing_ids = {item.id for item in completed}
                 replacements = [item for item in replacements if item.id not in existing_ids]
                 plan.steps = completed + replacements
+                replacement_ids = {item.id for item in replacements}
+                workflow.executor_results = [
+                    item for item in workflow.executor_results
+                    if item.step_id not in replacement_ids
+                ]
             else:
                 current.status = StepStatus.PENDING
                 current.retry_count = 0
+                workflow.executor_results = [
+                    item for item in workflow.executor_results
+                    if not (item.plan_id == plan.id and item.step_id == current.id)
+                ]
         plan.current_step_id = None
         plan.updated_at = utc_now()
         self._transition(workflow, WorkflowState.READY_TO_EXECUTE)
@@ -691,6 +731,8 @@ class PlannerAgent:
         steps: List[PlanStep] = []
         for index, raw in enumerate(raw_steps, 1):
             step_id = str(raw.get("id") or f"step-{index}")
+            raw_tool_args = raw.get("args", raw.get("tool_args", {}))
+            raw_tool_name = raw.get("tool", raw.get("tool_name"))
             steps.append(PlanStep(
                 id=step_id, sequence=int(raw.get("sequence", index)),
                 title=str(raw.get("title") or step_id),
@@ -701,8 +743,8 @@ class PlannerAgent:
                 ],
                 dependencies=[str(item) for item in raw.get("dependencies", [])],
                 max_retries=max(0, int(raw.get("max_retries", 2))),
-                tool_name=(str(raw.get("tool")).strip() if raw.get("tool") else None),
-                tool_args=(dict(raw.get("args")) if isinstance(raw.get("args"), dict) else {}),
+                tool_name=(str(raw_tool_name).strip() if raw_tool_name else None),
+                tool_args=(dict(raw_tool_args) if isinstance(raw_tool_args, dict) else {}),
             ))
         return steps
 
@@ -744,12 +786,15 @@ class PlannerAgent:
 
     @classmethod
     def _compact_schema(cls, value: Any) -> Any:
-        """Keep routing constraints while dropping verbose schema prose."""
+        """Keep argument semantics while dropping nonessential schema metadata."""
         if isinstance(value, dict):
             return {
-                key: cls._compact_schema(item)
+                key: (
+                    item[:240] if key == "description" and isinstance(item, str)
+                    else cls._compact_schema(item)
+                )
                 for key, item in value.items()
-                if key not in {"description", "title", "examples", "default"}
+                if key not in {"title", "examples", "$schema"}
             }
         if isinstance(value, list):
             return [cls._compact_schema(item) for item in value]
