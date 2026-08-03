@@ -22,6 +22,17 @@ class FailingVectorStore(InMemoryVectorStore):
         raise RuntimeError("qdrant unavailable")
 
 
+class LateStartingVectorStore(InMemoryVectorStore):
+    def __init__(self, dimensions):
+        super().__init__(dimensions)
+        self.initialise_attempts = 0
+
+    def initialise(self):
+        self.initialise_attempts += 1
+        if self.initialise_attempts == 1:
+            raise RuntimeError("qdrant is still starting")
+
+
 class MemoryTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -74,6 +85,22 @@ class MemoryTests(unittest.TestCase):
         later = self.search(session_id="another-session")
         self.assertEqual([item.memory_id for item in later.retrieved],
                          [created.created_memory_id])
+
+    def test_late_vector_store_start_does_not_disable_memory(self):
+        vectors = LateStartingVectorStore(self.embeddings.dimensions)
+        service = MemoryService(
+            self.repository, self.embeddings, vectors,
+            retriever=MemoryRetriever(
+                self.repository, self.embeddings, vectors, min_similarity=0
+            ),
+        )
+        result = service.execute(self.request(
+            MemoryAction.CREATE, memory=self.candidate("My name is Tatha."),
+            explicit_user_request=True,
+        ))
+        self.assertEqual(result.status, "success")
+        self.assertEqual(vectors.initialise_attempts, 2)
+        self.assertIn(result.created_memory_id, vectors.records)
 
     def test_tenant_and_user_isolation(self):
         self.create()

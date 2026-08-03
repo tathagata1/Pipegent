@@ -589,6 +589,22 @@ class PlannerAgent:
             return "Stored memories:\n" + "\n".join(
                 f"- {item.content}" for item in result.records
             )
+        if re.match(
+            r"(?is)^(?:what(?:'s| is)|do you (?:know|remember)) my name[?.!]*$",
+            stripped,
+        ):
+            result = self.executor.execute_memory_operation(MemoryOperationRequest(
+                operation_id=uuid.uuid4().hex, action=MemoryAction.LIST,
+                tenant_id=self.tenant_id, user_id=self.user_id,
+                session_id=session_id, project_id=self.project_id,
+            ))
+            for record in reversed(result.records):
+                match = re.search(
+                    r"(?is)\bmy name\s*(?:is|=)\s*([^.!?]+)", record.content
+                )
+                if match:
+                    return f"Your name is {match.group(1).strip()}."
+            return "I don’t have your name stored yet."
         delete = re.match(
             r"(?is)^(?:forget|delete memory)\s+(?:memory\s+)?([0-9a-f]{32})$", stripped
         )

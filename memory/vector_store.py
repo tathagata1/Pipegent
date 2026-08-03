@@ -74,10 +74,11 @@ class QdrantVectorStore:
 
     def __init__(
         self, url: str, collection_name: str, dimensions: int,
-        api_key: str = "", client: Any = None,
+        api_key: str = "", client: Any = None, timeout: float = 3.0,
     ) -> None:
         self.url, self.collection_name = url, collection_name
         self.dimensions, self.api_key, self._client = dimensions, api_key, client
+        self.timeout = timeout
 
     @property
     def client(self):
@@ -86,7 +87,9 @@ class QdrantVectorStore:
                 from qdrant_client import QdrantClient
             except ImportError as exc:
                 raise RuntimeError("qdrant-client is not installed") from exc
-            self._client = QdrantClient(url=self.url, api_key=self.api_key or None)
+            self._client = QdrantClient(
+                url=self.url, api_key=self.api_key or None, timeout=self.timeout
+            )
         return self._client
 
     def initialise(self) -> None:

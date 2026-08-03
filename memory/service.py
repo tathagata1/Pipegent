@@ -38,9 +38,20 @@ class MemoryService:
             repository, embeddings, vector_store
         )
         self.context_builder = context_builder or RetrievalContextBuilder()
-        self.vector_store.initialise()
-        if reconcile_on_startup:
+        self._vector_store_ready = False
+        try:
+            self._ensure_vector_store()
+        except Exception:
+            # SQLite is the canonical store. Keep memory available when the
+            # replaceable vector index starts late, and reconnect on demand.
+            logger.exception("vector_store_startup_unavailable")
+        if reconcile_on_startup and self._vector_store_ready:
             self._reconcile_pending()
+
+    def _ensure_vector_store(self) -> None:
+        if not self._vector_store_ready:
+            self.vector_store.initialise()
+            self._vector_store_ready = True
 
     def execute(self, request: MemoryOperationRequest) -> MemoryOperationResult:
         cached = self.repository.begin_operation(
@@ -196,6 +207,7 @@ class MemoryService:
 
     def _index_record(self, record: MemoryRecord) -> tuple[bool, str]:
         try:
+            self._ensure_vector_store()
             vector = self.embeddings.embed_query(record.searchable_text)
             record.embedding_model = self.embeddings.model_name
             self.vector_store.upsert([
@@ -226,6 +238,7 @@ class MemoryService:
     def _search(self, request: MemoryOperationRequest) -> MemoryOperationResult:
         if not request.query:
             raise ValueError("SEARCH requires a query.")
+        self._ensure_vector_store()
         settings = (
             self.repository.get_settings(request.tenant_id, request.user_id)
             if request.user_id else None
