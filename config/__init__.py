@@ -41,6 +41,9 @@ embedding_model = os.getenv(
 )
 embedding_device = os.getenv("EMBEDDING_DEVICE", "cpu")
 embedding_batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+embedding_local_files_only = os.getenv(
+    "EMBEDDING_LOCAL_FILES_ONLY", "true"
+).lower() in {"1", "true", "yes"}
 memory_default_top_k = int(os.getenv("MEMORY_DEFAULT_TOP_K", "8"))
 memory_max_context_items = int(os.getenv("MEMORY_MAX_CONTEXT_ITEMS", "10"))
 memory_min_similarity = float(os.getenv("MEMORY_MIN_SIMILARITY", "0.45"))

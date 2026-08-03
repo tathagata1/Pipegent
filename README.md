@@ -266,8 +266,8 @@ Copy-Item .env.example .env
 python main.py
 ```
 
-Sentence Transformers downloads the model into its normal local cache on first use and
-reuses one loaded model instance. To prefetch it:
+Pipegent loads Sentence Transformers during startup from its normal local cache so model
+initialisation cannot stall the first user request. To prefetch the model once:
 
 ```powershell
 python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
@@ -279,6 +279,8 @@ Memory configuration is environment based:
 - `MEMORY_AUTO_STORE_ENABLED`, default `false`
 - `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION_PREFIX`
 - `EMBEDDING_MODEL`, `EMBEDDING_DEVICE`, `EMBEDDING_BATCH_SIZE`
+- `EMBEDDING_LOCAL_FILES_ONLY`, default `true`; set it to `false` only while downloading
+  a model that is not already cached
 - `MEMORY_DEFAULT_TOP_K`, `MEMORY_MAX_CONTEXT_ITEMS`, `MEMORY_MIN_SIMILARITY`
 - `MEMORY_AUTO_STORE_CONFIDENCE`, `MEMORY_AUTO_STORE_IMPORTANCE`
 

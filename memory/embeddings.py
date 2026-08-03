@@ -19,11 +19,13 @@ class SentenceTransformerEmbeddingProvider:
     def __init__(
         self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
         device: str = "cpu", batch_size: int = 32, max_characters: int = 12000,
+        local_files_only: bool = True,
     ) -> None:
         self._model_name = model_name
         self.device = device
         self.batch_size = batch_size
         self.max_characters = max_characters
+        self.local_files_only = local_files_only
         self._model = None
         self._dimensions = 384 if model_name.endswith("all-MiniLM-L6-v2") else None
 
@@ -46,13 +48,20 @@ class SentenceTransformerEmbeddingProvider:
                     "sentence-transformers is not installed; install project requirements"
                 ) from exc
             try:
-                self._model = SentenceTransformer(self._model_name, device=self.device)
+                self._model = SentenceTransformer(
+                    self._model_name, device=self.device,
+                    local_files_only=self.local_files_only,
+                )
                 self._dimensions = self._model.get_sentence_embedding_dimension()
             except Exception as exc:
                 raise RuntimeError(
                     f"Unable to load local embedding model {self._model_name!r}: {exc}"
                 ) from exc
         return self._model
+
+    def warm_up(self) -> None:
+        """Load the model before the application begins accepting requests."""
+        self._load()
 
     def embed_documents(self, texts: Sequence[str]) -> List[List[float]]:
         if not texts:

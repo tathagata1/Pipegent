@@ -17,6 +17,7 @@ from config import (
     planner_temperature,
     memory_enabled, qdrant_api_key, qdrant_collection_prefix, qdrant_url,
     embedding_model, embedding_device, embedding_batch_size,
+    embedding_local_files_only,
     memory_max_context_items, memory_min_similarity, memory_auto_store_enabled,
 )
 from agents import PlannerAgent, ToolExecutor
@@ -73,8 +74,12 @@ def create_agent() -> PlannerAgent:
     if memory_enabled:
         try:
             embeddings = SentenceTransformerEmbeddingProvider(
-                embedding_model, embedding_device, embedding_batch_size
+                embedding_model, embedding_device, embedding_batch_size,
+                local_files_only=embedding_local_files_only,
             )
+            # Fail or finish model loading before accepting user input. This keeps
+            # the first ordinary question from blocking inside memory retrieval.
+            embeddings.warm_up()
             memory_repository = MemoryRepository(
                 Path(__file__).parent / "data" / "memory.sqlite3"
             )
@@ -161,6 +166,7 @@ def _load_all_plugins(plugin_dirs: List[Path]) -> Tuple[Dict[str, Callable[..., 
 
 def main() -> None:
     configure_logging()
+    print("Initializing Pipegent...")
     agent = create_agent()
 
     while True:
