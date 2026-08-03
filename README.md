@@ -105,13 +105,15 @@ in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegen
 
 ## Coordinated Workflow
 
-The explicit states are `UNDERSTANDING_INTENT`, `AWAITING_CLARIFICATION`,
-`PLANNING`, `READY_TO_EXECUTE`, `EXECUTING_STEP`, `VALIDATING_STEP`,
-`REPLANNING`, `COMPLETED`, `BLOCKED`, `FAILED`, and `CANCELLED`.
+The explicit states are `RETRIEVING_MEMORY`, `VALIDATING_RETRIEVED_CONTEXT`,
+`UNDERSTANDING_INTENT`, `AWAITING_CLARIFICATION`, `PLANNING`, `READY_TO_EXECUTE`,
+`EXECUTING_STEP`, `VALIDATING_STEP`, `REPLANNING`, `COMPLETED`, `BLOCKED`, `FAILED`,
+and `CANCELLED`.
 The state machine rejects invalid transitions.
 
-The Planner checks prior conversation context before asking focused clarification
-questions. Once sufficiently clear, it persists a structured `ExecutionPlan` and
+The Planner carries recent successful context across workflows in the same session and
+retrieves relevant memory before asking focused clarification questions. Once sufficiently
+clear, it persists a structured `ExecutionPlan` and
 dispatches only its current step. The Executor receives an `ExecutorStepRequest`
 with minimum relevant dependency results and returns an `ExecutorStepResult`
 containing evidence, errors, and discovered facts. The Planner validates the

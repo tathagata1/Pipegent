@@ -53,3 +53,23 @@ class JsonPlanRepository:
             if item.session_id == session_id and item.state.value not in terminal:
                 candidates.append(item)
         return max(candidates, key=lambda item: item.updated_at) if candidates else None
+
+    def find_latest_completed_by_session(
+        self, session_id: str, *, exclude_workflow_id: Optional[str] = None,
+    ) -> Optional[WorkflowRecord]:
+        """Return recent successful context for a continuing CLI session."""
+        candidates: List[WorkflowRecord] = []
+        for path in self.root.glob("*.json"):
+            try:
+                item = WorkflowRecord.from_dict(
+                    json.loads(path.read_text(encoding="utf-8"))
+                )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            if (
+                item.session_id == session_id
+                and item.state.value == "COMPLETED"
+                and item.id != exclude_workflow_id
+            ):
+                candidates.append(item)
+        return max(candidates, key=lambda item: item.updated_at) if candidates else None

@@ -19,10 +19,12 @@ class WorkflowStateMachine:
             WorkflowState.FAILED, WorkflowState.CANCELLED,
         }),
         WorkflowState.VALIDATING_RETRIEVED_CONTEXT: frozenset({
-            WorkflowState.PLANNING, WorkflowState.FAILED, WorkflowState.CANCELLED,
+            WorkflowState.UNDERSTANDING_INTENT, WorkflowState.PLANNING,
+            WorkflowState.FAILED, WorkflowState.CANCELLED,
         }),
         WorkflowState.AWAITING_CLARIFICATION: frozenset({
-            WorkflowState.UNDERSTANDING_INTENT, WorkflowState.CANCELLED,
+            WorkflowState.RETRIEVING_MEMORY, WorkflowState.UNDERSTANDING_INTENT,
+            WorkflowState.CANCELLED,
         }),
         WorkflowState.PLANNING: frozenset({
             WorkflowState.READY_TO_EXECUTE, WorkflowState.BLOCKED,

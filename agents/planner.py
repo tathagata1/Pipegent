@@ -101,18 +101,31 @@ class PlannerAgent:
             return workflow.final_response or self._drive(workflow)
         if workflow is None:
             workflow = self.repository.find_active_by_session(session_id)
+        if workflow is not None:
+            self._add_recent_session_context(workflow)
         if workflow and workflow.state == WorkflowState.AWAITING_CLARIFICATION:
             exchange = workflow.clarification_history[-1]
             exchange.answer = user_request
             exchange.answered_at = utc_now()
             workflow.conversation.append({"role": "user", "content": user_request})
-            self._transition(workflow, WorkflowState.UNDERSTANDING_INTENT)
+            self._transition(
+                workflow,
+                WorkflowState.RETRIEVING_MEMORY
+                if self.memory_service is not None
+                else WorkflowState.UNDERSTANDING_INTENT,
+            )
         elif workflow is None:
+            conversation = self._recent_session_context(session_id)
+            conversation.append({"role": "user", "content": user_request})
             workflow = WorkflowRecord(
                 id=request_id or uuid.uuid4().hex, session_id=session_id,
-                state=WorkflowState.UNDERSTANDING_INTENT,
+                state=(
+                    WorkflowState.RETRIEVING_MEMORY
+                    if self.memory_service is not None
+                    else WorkflowState.UNDERSTANDING_INTENT
+                ),
                 objective=user_request,
-                conversation=[{"role": "user", "content": user_request}],
+                conversation=conversation,
                 created_at=utc_now(), updated_at=utc_now(),
                 max_replans=self.max_replans,
             )
@@ -190,7 +203,7 @@ class PlannerAgent:
             elif workflow.state == WorkflowState.RETRIEVING_MEMORY:
                 self._retrieve_memory(workflow)
             elif workflow.state == WorkflowState.VALIDATING_RETRIEVED_CONTEXT:
-                self._transition(workflow, WorkflowState.PLANNING)
+                self._transition(workflow, WorkflowState.UNDERSTANDING_INTENT)
             elif workflow.state == WorkflowState.PLANNING:
                 self._create_plan(workflow)
             elif workflow.state == WorkflowState.READY_TO_EXECUTE:
@@ -221,10 +234,18 @@ class PlannerAgent:
         return workflow.final_response or "The task failed before it could be completed."
 
     def _understand(self, workflow: WorkflowRecord) -> None:
+        retrieved_memory = next((
+            item.get("context", "") for item in reversed(workflow.errors)
+            if item.get("kind") == "retrieved_memory"
+        ), "")
         payload = self._planner_json(
             "Analyse intent using the full conversation. Do not repeat answered questions.\n"
             + INTENT_SCHEMA,
-            {"conversation": workflow.conversation, "available_tools": self._tool_summary()},
+            {
+                "conversation": workflow.conversation,
+                "retrieved_memory": retrieved_memory,
+                "available_tools": self._tool_summary(),
+            },
             purpose="understand_intent", workflow_id=workflow.id,
         )
         log_event(
@@ -250,10 +271,7 @@ class PlannerAgent:
             "constraints": payload.get("constraints", []),
             "success_criteria": payload.get("success_criteria", []),
         })
-        self._transition(
-            workflow, WorkflowState.RETRIEVING_MEMORY
-            if self.memory_service is not None else WorkflowState.PLANNING
-        )
+        self._transition(workflow, WorkflowState.PLANNING)
 
     def _retrieve_memory(self, workflow: WorkflowRecord) -> None:
         if workflow.session_id in self._memory_disabled_sessions:
@@ -630,6 +648,53 @@ class PlannerAgent:
             {"name": item.get("name"), "description": item.get("description")}
             for item in self.tool_specs
         ]
+
+    def _recent_session_context(
+        self, session_id: str, *, exclude_workflow_id: Optional[str] = None,
+        max_messages: int = 20,
+    ) -> List[Dict[str, str]]:
+        """Carry successful conversation context across workflow boundaries."""
+        finder = getattr(self.repository, "find_latest_completed_by_session", None)
+        if not callable(finder):
+            return []
+        previous = finder(
+            session_id, exclude_workflow_id=exclude_workflow_id
+        )
+        if previous is None:
+            return []
+        context = [
+            {"role": item["role"], "content": item["content"]}
+            for item in previous.conversation
+            if item.get("role") in {"user", "assistant"}
+            and isinstance(item.get("content"), str)
+        ]
+        if previous.final_response:
+            context.append({
+                "role": "assistant", "content": previous.final_response,
+            })
+        carried = context[-max(1, max_messages):]
+        log_event(
+            logger, "planner.session_context.loaded",
+            session_id=session_id, source_workflow_id=previous.id,
+            message_count=len(carried), context=carried,
+        )
+        return carried
+
+    def _add_recent_session_context(self, workflow: WorkflowRecord) -> None:
+        context = self._recent_session_context(
+            workflow.session_id, exclude_workflow_id=workflow.id
+        )
+        if not context:
+            return
+        completion_marker = context[-1]
+        if completion_marker in workflow.conversation:
+            return
+        workflow.conversation = context + workflow.conversation
+        log_event(
+            logger, "planner.session_context.attached",
+            workflow_id=workflow.id, session_id=workflow.session_id,
+            added_message_count=len(context),
+        )
 
     def _handle_directed_memory(
         self, text: str, session_id: str,
