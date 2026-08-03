@@ -113,10 +113,13 @@ class FinancePluginContractTests(unittest.TestCase):
         root = Path(__file__).parents[1] / "plugins" / "user_plugins"
         for name in FINANCE_PLUGIN_NAMES:
             manifest = json.loads((root / name / "manifest.json").read_text(encoding="utf-8"))
+            function_source = (root / name / "function.py").read_text(encoding="utf-8")
             self.assertEqual(manifest["name"], name)
             self.assertEqual(manifest["execution_function"], name)
             self.assertEqual(manifest["input_schema"]["type"], "object")
             self.assertTrue((root / name / "function.py").is_file())
+            self.assertNotIn("from plugins.", function_source)
+            self.assertNotIn("import plugins.", function_source)
 
     def test_quote_calculates_change(self):
         with patch.dict(sys.modules, {"yfinance": fake_yfinance()}):

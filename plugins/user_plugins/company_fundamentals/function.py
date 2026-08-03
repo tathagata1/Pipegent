@@ -1,22 +1,61 @@
 """Curated company fundamentals from Yahoo Finance."""
 
-from plugins.finance_common import get_yfinance, json_safe, normalize_symbol, utc_now
+from datetime import date, datetime, timezone
+from math import isfinite
+import re
+from typing import Any
+
+
+_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^=._-]{1,32}$")
+
+
+def _normalize_symbol(symbol: str) -> str:
+    if not isinstance(symbol, str):
+        raise ValueError("symbol must be a string")
+    normalized = symbol.strip().upper()
+    if not _SYMBOL_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            "symbol must be 1-32 characters and contain only letters, numbers, "
+            "^, =, ., _, or -"
+        )
+    return normalized
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        return value if isfinite(value) else None
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if hasattr(value, "item"):
+        try:
+            return _json_safe(value.item())
+        except (TypeError, ValueError):
+            pass
+    return str(value)
 
 
 def _section(info: dict, fields: dict[str, str]) -> dict:
-    return {output: json_safe(info.get(source)) for output, source in fields.items()}
+    return {output: _json_safe(info.get(source)) for output, source in fields.items()}
 
 
 def company_fundamentals(symbol: str) -> dict:
     """Return a curated, stable subset of company profile and fundamental fields."""
-    symbol = normalize_symbol(symbol)
-    info = get_yfinance().Ticker(symbol).get_info()
+    import yfinance as yf
+
+    symbol = _normalize_symbol(symbol)
+    info = yf.Ticker(symbol).get_info()
     if not isinstance(info, dict) or not info:
         raise ValueError(f"No company fundamentals were returned for {symbol}")
 
     return {
         "symbol": symbol,
-        "fetched_at_utc": utc_now(),
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
         "company": _section(info, {
             "name": "longName", "short_name": "shortName", "quote_type": "quoteType",
             "sector": "sector", "industry": "industry", "country": "country",

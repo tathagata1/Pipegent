@@ -1,15 +1,33 @@
 """Long-only portfolio risk and return analysis using adjusted prices."""
 
+from datetime import datetime, timezone
 from math import isfinite, sqrt
-from typing import Optional
+import re
+from typing import Any, Optional
 
-from plugins.finance_common import (
-    get_yfinance,
-    normalize_symbol,
-    round_number,
-    utc_now,
-    validate_period,
-)
+
+_VALID_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^=._-]{1,32}$")
+
+
+def _normalize_symbol(symbol: str) -> str:
+    if not isinstance(symbol, str):
+        raise ValueError("symbol must be a string")
+    normalized = symbol.strip().upper()
+    if not _SYMBOL_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            "symbol must be 1-32 characters and contain only letters, numbers, "
+            "^, =, ., _, or -"
+        )
+    return normalized
+
+
+def _round_number(value: Any, digits: int = 6) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(number, digits) if isfinite(number) else None
 
 
 def _close_prices(data, symbols: list[str]):
@@ -52,13 +70,17 @@ def portfolio_analysis(
     risk_free_rate_percent: float = 0.0,
 ) -> dict:
     """Analyze a daily-rebalanced, long-only portfolio and optional benchmark."""
+    import yfinance as yf
+
     if not isinstance(symbols, list) or not 1 <= len(symbols) <= 20:
         raise ValueError("symbols must contain between 1 and 20 entries")
-    normalized_symbols = [normalize_symbol(symbol) for symbol in symbols]
+    normalized_symbols = [_normalize_symbol(symbol) for symbol in symbols]
     if len(set(normalized_symbols)) != len(normalized_symbols):
         raise ValueError("symbols must not contain duplicates")
-    period = validate_period(period)
-    benchmark_symbol = normalize_symbol(benchmark) if benchmark else None
+    period = str(period).strip().lower()
+    if period not in _VALID_PERIODS:
+        raise ValueError(f"Unsupported period: {period}")
+    benchmark_symbol = _normalize_symbol(benchmark) if benchmark else None
 
     if weights is None:
         normalized_weights = [1 / len(normalized_symbols)] * len(normalized_symbols)
@@ -79,7 +101,7 @@ def portfolio_analysis(
     download_symbols = list(normalized_symbols)
     if benchmark_symbol and benchmark_symbol not in download_symbols:
         download_symbols.append(benchmark_symbol)
-    data = get_yfinance().download(
+    data = yf.download(
         tickers=download_symbols,
         period=period,
         interval="1d",
@@ -104,7 +126,12 @@ def portfolio_analysis(
     portfolio_returns = asset_returns.mul(normalized_weights, axis=1).sum(axis=1)
     annual_return = _annualized_return(portfolio_returns)
     annual_volatility = float(portfolio_returns.std(ddof=1) * sqrt(252))
-    risk_free_rate = float(risk_free_rate_percent) / 100
+    try:
+        risk_free_rate = float(risk_free_rate_percent) / 100
+    except (TypeError, ValueError) as exc:
+        raise ValueError("risk_free_rate_percent must be a finite number") from exc
+    if not isfinite(risk_free_rate):
+        raise ValueError("risk_free_rate_percent must be a finite number")
     annualized_mean_return = float(portfolio_returns.mean() * 252)
     sharpe_ratio = (
         (annualized_mean_return - risk_free_rate) / annual_volatility
@@ -117,8 +144,8 @@ def portfolio_analysis(
         per_asset.append({
             "symbol": symbol,
             "weight_percent": round(weight * 100, 4),
-            "total_return_percent": round_number(((1 + returns).prod() - 1) * 100, 4),
-            "annualized_volatility_percent": round_number(returns.std(ddof=1) * sqrt(252) * 100, 4),
+            "total_return_percent": _round_number(((1 + returns).prod() - 1) * 100, 4),
+            "annualized_volatility_percent": _round_number(returns.std(ddof=1) * sqrt(252) * 100, 4),
         })
 
     benchmark_result = None
@@ -138,30 +165,30 @@ def portfolio_analysis(
             benchmark_result = {
                 "symbol": benchmark_symbol,
                 "observations": int(len(aligned)),
-                "annualized_return_percent": round_number(
+                "annualized_return_percent": _round_number(
                     benchmark_annual_return * 100 if benchmark_annual_return is not None else None, 4
                 ),
-                "annualized_volatility_percent": round_number(
+                "annualized_volatility_percent": _round_number(
                     aligned["benchmark"].std(ddof=1) * sqrt(252) * 100, 4
                 ),
-                "correlation": round_number(aligned["portfolio"].corr(aligned["benchmark"]), 4),
-                "beta": round_number(beta, 4),
+                "correlation": _round_number(aligned["portfolio"].corr(aligned["benchmark"]), 4),
+                "beta": _round_number(beta, 4),
             }
 
     return {
-        "fetched_at_utc": utc_now(),
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
         "period": period,
         "start_date": str(asset_returns.index[0]),
         "end_date": str(asset_returns.index[-1]),
         "observations": int(len(portfolio_returns)),
         "portfolio": {
-            "total_return_percent": round_number(((1 + portfolio_returns).prod() - 1) * 100, 4),
-            "annualized_return_percent": round_number(annual_return * 100 if annual_return is not None else None, 4),
-            "annualized_volatility_percent": round_number(annual_volatility * 100, 4),
-            "sharpe_ratio": round_number(sharpe_ratio, 4),
-            "maximum_drawdown_percent": round_number(_maximum_drawdown(portfolio_returns) * 100, 4),
-            "best_day_percent": round_number(portfolio_returns.max() * 100, 4),
-            "worst_day_percent": round_number(portfolio_returns.min() * 100, 4),
+            "total_return_percent": _round_number(((1 + portfolio_returns).prod() - 1) * 100, 4),
+            "annualized_return_percent": _round_number(annual_return * 100 if annual_return is not None else None, 4),
+            "annualized_volatility_percent": _round_number(annual_volatility * 100, 4),
+            "sharpe_ratio": _round_number(sharpe_ratio, 4),
+            "maximum_drawdown_percent": _round_number(_maximum_drawdown(portfolio_returns) * 100, 4),
+            "best_day_percent": _round_number(portfolio_returns.max() * 100, 4),
+            "worst_day_percent": _round_number(portfolio_returns.min() * 100, 4),
         },
         "assets": per_asset,
         "benchmark": benchmark_result,

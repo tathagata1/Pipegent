@@ -1,8 +1,34 @@
 """Deterministic technical indicators calculated from yfinance prices."""
 
-from math import sqrt
+from datetime import datetime, timezone
+from math import isfinite, sqrt
+import re
+from typing import Any, Optional
 
-from plugins.finance_common import history_frame, round_number, utc_now
+
+_VALID_PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+_VALID_INTERVALS = {"1d", "5d", "1wk", "1mo", "3mo"}
+_SYMBOL_PATTERN = re.compile(r"^[A-Z0-9^=._-]{1,32}$")
+
+
+def _normalize_symbol(symbol: str) -> str:
+    if not isinstance(symbol, str):
+        raise ValueError("symbol must be a string")
+    normalized = symbol.strip().upper()
+    if not _SYMBOL_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            "symbol must be 1-32 characters and contain only letters, numbers, "
+            "^, =, ., _, or -"
+        )
+    return normalized
+
+
+def _round_number(value: Any, digits: int = 6) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(number, digits) if isfinite(number) else None
 
 
 def technical_analysis(
@@ -14,13 +40,33 @@ def technical_analysis(
     rsi_window: int = 14,
 ) -> dict:
     """Calculate trend, momentum, volatility, RSI, and drawdown statistics."""
+    import yfinance as yf
+
     for name, value in (("short_window", short_window), ("long_window", long_window), ("rsi_window", rsi_window)):
         if not isinstance(value, int) or isinstance(value, bool) or value < 2:
             raise ValueError(f"{name} must be an integer of at least 2")
     if short_window >= long_window:
         raise ValueError("short_window must be smaller than long_window")
 
-    symbol, frame = history_frame(symbol, period=period, interval=interval, auto_adjust=True)
+    symbol = _normalize_symbol(symbol)
+    period = str(period).strip().lower()
+    interval = str(interval).strip().lower()
+    if period not in _VALID_PERIODS:
+        raise ValueError(f"Unsupported period: {period}")
+    if interval not in _VALID_INTERVALS:
+        raise ValueError(f"Unsupported interval: {interval}")
+
+    frame = yf.Ticker(symbol).history(
+        period=period,
+        interval=interval,
+        auto_adjust=True,
+        actions=False,
+        repair=True,
+        timeout=10,
+        raise_errors=True,
+    )
+    if frame is None or frame.empty:
+        raise ValueError(f"No price history was returned for {symbol}")
     close = frame["Close"].dropna().astype(float)
     minimum_rows = max(long_window, rsi_window + 1)
     if len(close) < minimum_rows:
@@ -57,32 +103,32 @@ def technical_analysis(
 
     lookback = min(20, len(close) - 1)
     momentum = ((price / float(close.iloc[-lookback - 1])) - 1) * 100
-    rsi_value = round_number(rsi.iloc[-1], 2)
+    rsi_value = _round_number(rsi.iloc[-1], 2)
     rsi_signal = "overbought" if rsi_value is not None and rsi_value >= 70 else (
         "oversold" if rsi_value is not None and rsi_value <= 30 else "neutral"
     )
 
     return {
         "symbol": symbol,
-        "fetched_at_utc": utc_now(),
+        "fetched_at_utc": datetime.now(timezone.utc).isoformat(),
         "period": period,
         "interval": interval,
         "observations": int(len(close)),
         "last_date": str(close.index[-1]),
-        "last_price": round_number(price),
+        "last_price": _round_number(price),
         "trend": trend,
         "rsi_signal": rsi_signal,
         "indicators": {
-            "sma_short": round_number(sma_short_value),
-            "sma_long": round_number(sma_long_value),
-            "ema_short": round_number(short_ema.iloc[-1]),
-            "ema_long": round_number(long_ema.iloc[-1]),
+            "sma_short": _round_number(sma_short_value),
+            "sma_long": _round_number(sma_long_value),
+            "ema_short": _round_number(short_ema.iloc[-1]),
+            "ema_long": _round_number(long_ema.iloc[-1]),
             "rsi": rsi_value,
-            "momentum_20_period_percent": round_number(momentum, 4),
-            "annualized_volatility_percent": round_number(
+            "momentum_20_period_percent": _round_number(momentum, 4),
+            "annualized_volatility_percent": _round_number(
                 annualized_volatility * 100 if annualized_volatility is not None else None, 4
             ),
-            "maximum_drawdown_percent": round_number(float(drawdown.min()) * 100, 4),
+            "maximum_drawdown_percent": _round_number(float(drawdown.min()) * 100, 4),
         },
         "windows": {"short": short_window, "long": long_window, "rsi": rsi_window},
         "methodology": "Adjusted closing prices; Wilder-style RSI; 252 sessions/year for daily volatility.",
