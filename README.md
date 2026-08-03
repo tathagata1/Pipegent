@@ -30,7 +30,7 @@ in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegen
 - **Manifest-driven prompts** – the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
 - **Stateful planning/execution** – a user-facing Planner owns clarification, a typed plan, validation, retry/re-planning, and the final response. A constrained Executor receives exactly one step at a time.
 - **Resumable workflows** – plans, revisions, results, validation decisions, retries, and clarification history are atomically persisted under `data/workflows/`.
-- **Ephemeral tempstore** – step outputs are written to `tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
+- **Ephemeral tempstore** – step outputs are written to `data/tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
 - **Structured logging** – every run writes a time-stamped file under `logs/`, while the console stays minimal (`You:`, `thinking...`, `Agent:`). Logs capture planner/executor interactions, plugin-loading diagnostics, and failure traces without cluttering the terminal.
 - **Config-driven OpenAI clients** – `config/config.ini` contains the OpenAI credentials and planner/executor settings in one place.
 
@@ -61,7 +61,9 @@ in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegen
 |   |-- core_plugins/        # First-party tools shipped with Pipegent
 |   `-- user_plugins/        # Space for custom/community tools
 |-- user_files/              # Drop user-provided docs/images/etc. (git-ignored)
-|-- tempstore/               # Ephemeral files (auto-cleaned per run)
+|-- data/                    # Runtime data
+|   |-- tempstore/           # Ephemeral files (auto-cleaned per run)
+|   `-- workflows/           # Persisted workflow state
 |-- logs/                    # Structured execution logs (git-ignored)
 `-- requirements.txt         # Python dependencies (OpenAI SDK + optional extras)
 ```
@@ -160,7 +162,7 @@ Pipegent now ships with a broad starter suite so most automation tasks can be ha
 
 ## Logging & Telemetry
 - Every run generates `logs/pipegent_<timestamp>.log` with INFO-level summaries and DEBUG traces of planner/executor/tool activity. Console output stays minimal (`You:`, `thinking...`, `Agent:`) to emphasize the user dialogue.
-- `tempstore/` continues to hold intermediate artifacts across steps; filenames are referenced inside logs for easier troubleshooting.
+- `data/tempstore/` continues to hold intermediate artifacts across steps; filenames are referenced inside logs for easier troubleshooting.
 
 ## Working with User Files
 - Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.

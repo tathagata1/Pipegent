@@ -1,7 +1,7 @@
 config/config.ini
 *.pyc
 __pycache__/
-tempstore/*
+data/tempstore/
 logs/
 user_files/
 data/workflows/

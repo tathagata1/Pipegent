@@ -120,7 +120,7 @@ def create_agent() -> PlannerAgent:
         memory_service=memory_service,
     )
 
-    temp_dir = Path(__file__).parent / "tempstore"
+    temp_dir = Path(__file__).parent / "data" / "tempstore"
     prepare_temp_dir(temp_dir)
     workflow_dir = Path(__file__).parent / "data" / "workflows"
     repository = JsonPlanRepository(workflow_dir)
