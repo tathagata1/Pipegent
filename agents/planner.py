@@ -38,7 +38,7 @@ class PlannerAgent:
     def __init__(
         self, client: OpenAI, executor: ExecutorAgent,
         tool_specs: List[Dict[str, Any]], planner_model: str,
-        planner_temperature: float, max_steps: int, temp_dir: Path,
+        planner_temperature: float, max_steps: int,
         context_file: Optional[Path] = None,
         repository: Optional[JsonPlanRepository] = None,
         validator: Optional[ExecutionResultValidator] = None,
@@ -53,9 +53,10 @@ class PlannerAgent:
         self.planner_model = planner_model
         self.planner_temperature = planner_temperature
         self.max_steps = max(1, max_steps)
-        self.temp_dir = temp_dir
         self.context_file = context_file
-        self.repository = repository or JsonPlanRepository(temp_dir / "workflows")
+        self.repository = repository or JsonPlanRepository(
+            Path(__file__).resolve().parents[1] / "data" / "workflows"
+        )
         self.validator = validator or ExecutionResultValidator()
         self.max_replans = max(0, max_replans)
         self.state_machine = WorkflowStateMachine()

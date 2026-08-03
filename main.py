@@ -168,8 +168,6 @@ def create_agent() -> PlannerAgent:
         memory_service=memory_service,
     )
 
-    temp_dir = Path(__file__).parent / "data" / "tempstore"
-    prepare_temp_dir(temp_dir)
     workflow_dir = Path(__file__).parent / "data" / "workflows"
     repository = JsonPlanRepository(workflow_dir)
 
@@ -180,17 +178,12 @@ def create_agent() -> PlannerAgent:
         planner_model=planner_model,
         planner_temperature=planner_temperature,
         max_steps=max_steps,
-        temp_dir=temp_dir,
         repository=repository,
         max_replans=max_replans,
         memory_service=memory_service,
     )
     logger.info("Agent initialized with %s tools.", len(tools))
     return agent
-
-
-def prepare_temp_dir(temp_dir: Path) -> None:
-    temp_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _load_all_plugins(plugin_dirs: List[Path]) -> Tuple[Dict[str, Callable[..., Any]], List[Dict[str, Any]]]:

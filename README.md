@@ -30,7 +30,6 @@ in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegen
 - **Manifest-driven prompts** – the executor system prompt is generated from plugin manifests so the LLM always knows which tools exist and what their JSON schemas expect.
 - **Stateful planning/execution** – a user-facing Planner owns clarification, a typed plan, validation, retry/re-planning, and the final response. A constrained Executor receives exactly one step at a time.
 - **Resumable workflows** – plans, revisions, results, validation decisions, retries, and clarification history are atomically persisted under `data/workflows/`.
-- **Ephemeral tempstore** – step outputs are written to `data/tempstore/` with random alphanumeric filenames and deleted automatically when execution finishes.
 - **Structured logging** – every run writes a time-stamped file under `logs/`, while the console stays minimal (`You:`, `thinking...`, `Agent:`). Logs capture planner/executor interactions, plugin-loading diagnostics, and failure traces without cluttering the terminal.
 - **Config-driven OpenAI clients** – `config/config.ini` contains the OpenAI credentials and planner/executor settings in one place.
 
@@ -62,7 +61,6 @@ in its Docker volume between restarts. Use `exit` or `quit` to leave the Pipegen
 |   `-- user_plugins/        # Space for custom/community tools
 |-- user_files/              # Drop user-provided docs/images/etc. (git-ignored)
 |-- data/                    # Runtime data
-|   |-- tempstore/           # Ephemeral files (auto-cleaned per run)
 |   `-- workflows/           # Persisted workflow state
 |-- logs/                    # Structured execution logs (git-ignored)
 `-- requirements.txt         # Python dependencies (OpenAI SDK + optional extras)
@@ -195,8 +193,7 @@ Logging can be tuned with:
 
 The console stays minimal (`You:`, `thinking...`, `Agent:`). If the model returns a structured
 final JSON object, only its `message` is displayed; the complete payload remains available in
-the verbose log and persisted workflow. `data/tempstore/` continues to hold intermediate
-artifacts across steps; filenames are referenced inside logs.
+the verbose log and persisted workflow.
 
 ## Working with User Files
 - Place any documents/spreadsheets/images you want the agent to read under `user_files/` at the repo root. The automation tools automatically look there even if you mention an external OS path like `C:\Users\me\Downloads\foo.docx`.
