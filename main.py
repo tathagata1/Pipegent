@@ -47,7 +47,7 @@ def configure_logging() -> Path:
 
     logs_dir = Path(__file__).parent / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
-    log_file = logs_dir / f"pipegent_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_file = logs_dir / f"pipegent_{datetime.now().strftime('%Y%m%d')}.log"
     level_name = os.getenv("PIPEGENT_LOG_LEVEL", "DEBUG").upper()
     file_level = getattr(logging, level_name, logging.DEBUG)
     try:
